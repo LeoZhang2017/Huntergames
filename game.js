@@ -40,13 +40,20 @@ const gameState = {
         team: null, // 'red' or 'blue' for stage 2
         kills: 0,
         speed: 0.1,
-        weapon: null
+        weapon: null,
+        currentWeaponIndex: -1,
+        isReloading: false,
+        reloadTime: 0
     },
     enemies: [],
     items: [],
     gameStarted: false,
     stageCompleted: false,
     gameOver: false,
+    enemySpawnTimer: 60, // Spawn enemies after 60 seconds
+    enemySpawned: false,
+    spawnWarningShown: false,
+    warningShown: false,
     pointerLocked: false,
     timer: 180, // 3 minutes in seconds
     timerActive: false,
@@ -1096,26 +1103,62 @@ function spawnWarehouseItems() {
 
 // Spawn enemies for the warehouse stage (after 1 minute)
 function spawnWarehouseEnemies() {
-    const enemySpawnPoints = [
-        // Spawn around the edges of the warehouse
-        { x: -45, z: -45 }, { x: 45, z: -45 }, { x: -45, z: 45 }, { x: 45, z: 45 },
-        { x: -45, z: 0 }, { x: 45, z: 0 }, { x: 0, z: -45 }, { x: 0, z: 45 },
-        // Spawn in some sheltered areas
-        { x: -30, z: -30 }, { x: 30, z: -30 }, { x: -30, z: 30 }, { x: 30, z: 30 },
-        { x: -15, z: -35 }, { x: 15, z: -35 }, { x: -15, z: 35 }, { x: 15, z: 35 }
-    ];
-
-    // Spawn 8-12 enemies
-    const numEnemies = 8 + Math.floor(Math.random() * 5);
+    // Create a grid of spawn points
+    const spawnPoints = [];
     
-    for (let i = 0; i < numEnemies; i++) {
-        const spawnPoint = enemySpawnPoints[i % enemySpawnPoints.length];
-        
-        // Most enemies have knives (80% chance), some have pistols (20% chance)
-        const hasKnife = Math.random() < 0.8;
-        
-        createKnifeEnemy(spawnPoint.x, spawnPoint.z, hasKnife);
+    // Add perimeter spawn points
+    for (let x = -45; x <= 45; x += 15) {
+        spawnPoints.push({ x: x, z: -45 }); // North wall
+        spawnPoints.push({ x: x, z: 45 });  // South wall
     }
+    for (let z = -30; z <= 30; z += 15) {
+        spawnPoints.push({ x: -45, z: z }); // West wall
+        spawnPoints.push({ x: 45, z: z });  // East wall
+    }
+    
+    // Add interior spawn points (avoiding center area)
+    for (let x = -30; x <= 30; x += 15) {
+        for (let z = -30; z <= 30; z += 15) {
+            // Skip the central safe zone
+            if (Math.abs(x) < 20 && Math.abs(z) < 20) continue;
+            spawnPoints.push({ x, z });
+        }
+    }
+    
+    // Randomly select 10-15 spawn points
+    const numEnemies = 10 + Math.floor(Math.random() * 6);
+    const selectedPoints = [];
+    
+    while (selectedPoints.length < numEnemies && spawnPoints.length > 0) {
+        const index = Math.floor(Math.random() * spawnPoints.length);
+        selectedPoints.push(spawnPoints.splice(index, 1)[0]);
+    }
+    
+    // Spawn enemies at selected points
+    selectedPoints.forEach(point => {
+        // Add random offset to make spawning less grid-like
+        const offset = {
+            x: (Math.random() - 0.5) * 8,
+            z: (Math.random() - 0.5) * 8
+        };
+        
+        // 70% chance for knife enemy, 30% for gun enemy
+        const hasKnife = Math.random() < 0.7;
+        
+        createKnifeEnemy(
+            point.x + offset.x,
+            point.z + offset.z,
+            hasKnife
+        );
+    });
+    
+    // Show warning message with enemy breakdown
+    const knifeCount = Math.round(numEnemies * 0.7);
+    const gunCount = numEnemies - knifeCount;
+    showPickupMessage(
+        `${numEnemies} enemies have spawned! ${knifeCount} with knives, ${gunCount} with guns. Be careful!`,
+        true
+    );
 }
 
 // Create a knife-wielding enemy
@@ -1599,7 +1642,7 @@ function selectTeam(team) {
 }
 
 // Update function to handle floating animations for items
-const updateItemAnimations = (delta) => {
+function updateItemAnimations(delta) {
     gameState.items.forEach(item => {
         if (item.mesh && item.mesh.userData) {
             const userData = item.mesh.userData;
@@ -1841,7 +1884,13 @@ function animate() {
             if (gameState.timer <= 0) {
                 gameState.timer = 0;
                 gameState.timerActive = false;
-                gameOver(false); // Game over if time runs out
+                
+                // Check if player has enough points/kills to proceed
+                const minKills = 5;
+                const minCoins = 50;
+                const playerWon = gameState.player.kills >= minKills && gameState.player.coins >= minCoins;
+                
+                gameOver(playerWon);
             }
             updateTimer();
         }
@@ -1962,6 +2011,27 @@ function updateEnemies(delta) {
         // Update attack cooldown
         if (enemy.attackCooldown > 0) {
             enemy.attackCooldown -= delta;
+        }
+        
+        // Handle retreating state
+        if (enemy.state === 'retreating') {
+            // Move away from player
+            const direction = new THREE.Vector3()
+                .subVectors(enemy.position, gameState.player.position)
+                .normalize();
+            
+            // Move faster when retreating
+            enemy.position.add(direction.multiplyScalar(enemy.speed * 2));
+            enemy.mesh.position.copy(enemy.position);
+            
+            // Face away from player while retreating
+            enemy.mesh.lookAt(
+                enemy.position.x + direction.x,
+                enemy.position.y,
+                enemy.position.z + direction.z
+            );
+            
+            return; // Skip other behaviors when retreating
         }
         
         // AI behavior based on distance and enemy type
@@ -2106,6 +2176,11 @@ function updateEnemies(delta) {
                 enemy.mesh.position.copy(enemy.position);
             }
         }
+        
+        // Keep enemies within stage bounds
+        enemy.position.x = Math.max(-48, Math.min(48, enemy.position.x));
+        enemy.position.z = Math.max(-48, Math.min(48, enemy.position.z));
+        enemy.mesh.position.copy(enemy.position);
     });
 }
 
@@ -2516,40 +2591,46 @@ function applyItemEffect(item) {
 }
 
 // Game over
-function gameOver(victory) {
+function gameOver(playerWon = false) {
+    gameState.gameOver = true;
+    gameState.timerActive = false;
+    
     // Exit pointer lock
     if (document.pointerLockElement === gameContainer) {
         document.exitPointerLock();
     }
     
-    gameState.gameOver = true;
-    
     // Show game over message
-    gameMessageElement.textContent = victory ? 
-        'Congratulations! You have won the Hunter Games!' : 
-        'Game Over! You have been eliminated from the Hunter Games!';
-    gameMessageElement.style.display = 'block';
+    const message = playerWon ? 
+        "Stage Complete! Prepare for the next challenge!" : 
+        "Time's up! Better luck next time!";
     
-    // Create restart button
-    const restartButton = document.createElement('button');
-    restartButton.textContent = 'Play Again';
-    restartButton.style.marginTop = '15px';
-    restartButton.style.padding = '10px 20px';
-    restartButton.style.pointerEvents = 'auto';
-    restartButton.onclick = () => {
-        // Reset game
-        resetGameState();
-        
-        // Hide message and remove button
-        gameMessageElement.style.display = 'none';
-        gameMessageElement.innerHTML = '';
-        
-        // Start game again
-        gameState.gameStarted = true;
-        gameContainer.requestPointerLock();
-    };
+    showPickupMessage(message, !playerWon);
     
-    gameMessageElement.appendChild(restartButton);
+    // If player won, transition to next stage after a delay
+    if (playerWon) {
+        setTimeout(() => {
+            if (gameState.currentStage === STAGES.WAREHOUSE) {
+                // Transition to Stage 2
+                gameState.currentStage = STAGES.ARENA;
+                setupStage(STAGES.ARENA);
+                showTeamSelection();
+            } else if (gameState.currentStage === STAGES.ARENA) {
+                // Show "Coming Soon" message for Stage 3
+                showPickupMessage("Stage 3: The Billionaire Hunter - Coming Soon!", false);
+                setTimeout(() => {
+                    // Reset to Stage 1 for now
+                    gameState.currentStage = STAGES.WAREHOUSE;
+                    setupStage(STAGES.WAREHOUSE);
+                }, 3000);
+            }
+        }, 2000);
+    } else {
+        // Reset current stage after a delay
+        setTimeout(() => {
+            setupStage(gameState.currentStage);
+        }, 2000);
+    }
 }
 
 // Update UI elements
@@ -3685,6 +3766,8 @@ function startTimer() {
     console.log('Starting timer...'); // Debug log
     gameState.timerActive = true;
     gameState.timer = 180; // 3 minutes in seconds
+    gameState.enemySpawnTimer = 60; // Spawn enemies after 60 seconds
+    gameState.enemySpawned = false;
     updateTimer();
 }
 
