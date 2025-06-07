@@ -710,6 +710,13 @@ function createArenaObstacles() {
         barrier.castShadow = true;
         barrier.receiveShadow = true;
         terrainGroup.add(barrier);
+        
+        // Add collision box for this barrier
+        const barrierBox = new THREE.Box3().setFromCenterAndSize(
+            new THREE.Vector3(i, 0.5, 0),
+            new THREE.Vector3(3, 1, 1)
+        );
+        gameState.wallColliders.push(barrierBox);
     }
     
     // Create containers for cover
@@ -740,6 +747,13 @@ function createArenaObstacles() {
         container.castShadow = true;
         container.receiveShadow = true;
         terrainGroup.add(container);
+        
+        // Add collision box for this container
+        const containerBox = new THREE.Box3().setFromCenterAndSize(
+            new THREE.Vector3(pos.x, 1.25, pos.z),
+            new THREE.Vector3(5, 2.5, 2.5)
+        );
+        gameState.wallColliders.push(containerBox);
     });
     
     // Create bunkers
@@ -769,6 +783,13 @@ function createBunker(x, z) {
     wall.position.set(x, 1.75, z);
     wall.rotation.y = Math.random() * Math.PI * 2; // Random orientation
     terrainGroup.add(wall);
+    
+    // Add collision box for bunker (circular collision approximated with square)
+    const bunkerBox = new THREE.Box3().setFromCenterAndSize(
+        new THREE.Vector3(x, 1.25, z),
+        new THREE.Vector3(7, 2.5, 7) // Slightly larger than bunker for easier collision
+    );
+    gameState.wallColliders.push(bunkerBox);
 }
 
 // Add decorative elements to the arena
@@ -788,6 +809,13 @@ function addArenaDecorations() {
         const post = new THREE.Mesh(postGeometry, postMaterial);
         post.position.set(pos.x, 4, pos.z);
         terrainGroup.add(post);
+        
+        // Add collision box for spotlight post
+        const postBox = new THREE.Box3().setFromCenterAndSize(
+            new THREE.Vector3(pos.x, 4, pos.z),
+            new THREE.Vector3(1, 8, 1)
+        );
+        gameState.wallColliders.push(postBox);
         
         // Create spotlight head
         const headGeometry = new THREE.ConeGeometry(1, 2, 16);
