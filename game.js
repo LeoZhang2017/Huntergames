@@ -59,11 +59,12 @@ const gameState = {
 
 // THREE.js Variables
 let scene, camera, renderer;
-let playerObject, weaponObject;
+let playerObject, weaponObject, weaponGroup;
 let skybox;
-let terrainGroup, itemsGroup, enemiesGroup;
+let terrainGroup, itemsGroup, enemiesGroup, effectsGroup;
 let raycaster, mouse;
 let clock;
+let muzzleFlash;
 
 // UI Elements
 const startButton = document.getElementById('start-button');
@@ -99,8 +100,8 @@ function initGame() {
     // Set up UI
     updateUI();
     
-    // Start button event listener
-    startButton.addEventListener('click', startGame);
+    // Create proper start panel
+    createStartPanel();
     
     // Start animation loop
     animate();
@@ -132,14 +133,21 @@ function setupScene() {
     terrainGroup = new THREE.Group();
     itemsGroup = new THREE.Group();
     enemiesGroup = new THREE.Group();
+    effectsGroup = new THREE.Group();
     
     scene.add(terrainGroup);
     scene.add(itemsGroup);
     scene.add(enemiesGroup);
+    scene.add(effectsGroup);
     
     // Create player object (invisible, just for collision)
     playerObject = new THREE.Group();
     scene.add(playerObject);
+    
+    // Create weapon group for first-person weapon view
+    weaponGroup = new THREE.Group();
+    camera.add(weaponGroup);
+    scene.add(camera);
     
     // Initialize raycaster for picking
     raycaster = new THREE.Raycaster();
@@ -234,13 +242,18 @@ function resetGameState() {
         team: null,
         kills: 0,
         speed: 0.1,
-        weapon: null
+        weapon: null,
+        currentWeaponIndex: -1,
+        isReloading: false,
+        reloadTime: 0
     };
     gameState.enemies = [];
     gameState.items = [];
     gameState.gameStarted = false;
     gameState.stageCompleted = false;
     gameState.gameOver = false;
+    gameState.enemySpawnTimer = 60; // Spawn enemies after 60 seconds
+    gameState.enemySpawned = false;
     
     // Reset camera position
     camera.position.set(0, 1.6, 0);
@@ -267,11 +280,11 @@ function setupStage(stage) {
             break;
         case STAGES.ARENA:
             currentStageElement.textContent = "Reds or Blues";
-            setupArena();
+            setupArenaStage();
             break;
         case STAGES.FOREST:
             currentStageElement.textContent = "The Billionaire Hunter";
-            setupForest();
+            setupForestStage();
             break;
     }
 }
@@ -806,68 +819,102 @@ function addArenaDecorations() {
 
 // Spawn items in the warehouse stage
 function spawnWarehouseItems() {
-    // Create weapon placement zones (different sections of the warehouse)
+    // Create more weapon placement zones (scattered throughout warehouse)
     const weaponZones = [
-        { x: -35, z: -35, radius: 10 }, // Top left
-        { x: 35, z: -35, radius: 10 },  // Top right
-        { x: -35, z: 35, radius: 10 },  // Bottom left
-        { x: 35, z: 35, radius: 10 }    // Bottom right
+        { x: -35, z: -35, radius: 8 }, // Top left
+        { x: 35, z: -35, radius: 8 },  // Top right
+        { x: -35, z: 35, radius: 8 },  // Bottom left
+        { x: 35, z: 35, radius: 8 },   // Bottom right
+        { x: 0, z: -35, radius: 6 },   // Top center
+        { x: 0, z: 35, radius: 6 },    // Bottom center
+        { x: -35, z: 0, radius: 6 },   // Left center
+        { x: 35, z: 0, radius: 6 },    // Right center
+        { x: -15, z: -15, radius: 5 }, // Inner zones
+        { x: 15, z: -15, radius: 5 },
+        { x: -15, z: 15, radius: 5 },
+        { x: 15, z: 15, radius: 5 }
     ];
     
-    // Spawn weapons in their respective zones
+    // Spawn multiple instances of each weapon type
     const weaponKeys = Object.keys(WEAPONS);
-    for (let i = 0; i < weaponKeys.length; i++) {
-        const weaponType = weaponKeys[i];
-        const weapon = WEAPONS[weaponType];
-        
-        // Select zone for this weapon
-        const zone = weaponZones[i % weaponZones.length];
-        
-        // Create a weapon model
-        const weaponGeometry = new THREE.BoxGeometry(1, 0.2, 0.5);
-        const weaponMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-        const weaponMesh = new THREE.Mesh(weaponGeometry, weaponMaterial);
-        
-        // Position within zone (random point within circle)
-        const angle = Math.random() * Math.PI * 2;
-        const distance = Math.random() * zone.radius;
-        const x = zone.x + Math.cos(angle) * distance;
-        const z = zone.z + Math.sin(angle) * distance;
-        
-        weaponMesh.position.set(x, 0.5, z);
-        weaponMesh.rotation.y = Math.random() * Math.PI * 2;
-        weaponMesh.castShadow = true;
-        
-        // Add floating animation
-        const floatHeight = 0.5 + Math.random() * 0.2;
-        const floatSpeed = 0.5 + Math.random() * 0.5;
-        weaponMesh.userData = {
-            baseY: floatHeight,
-            floatSpeed: floatSpeed,
-            floatTime: Math.random() * Math.PI * 2 // Random start phase
-        };
-        
-        // Add highlight effect
-        const highlightGeometry = new THREE.SphereGeometry(0.5, 8, 8);
-        const highlightMaterial = new THREE.MeshBasicMaterial({
-            color: 0xff0000,
-            transparent: true,
-            opacity: 0.3
-        });
-        const highlight = new THREE.Mesh(highlightGeometry, highlightMaterial);
-        highlight.scale.set(2, 1, 2);
-        highlight.position.y = 0.1;
-        weaponMesh.add(highlight);
-        
-        itemsGroup.add(weaponMesh);
-        
-        // Add to game state
-        gameState.items.push({
-            type: 'weapon',
-            weapon: weapon,
-            position: new THREE.Vector3(x, floatHeight, z),
-            mesh: weaponMesh
-        });
+    let weaponCount = 0;
+    
+    // Create 3 instances of each weapon scattered around
+    for (let weaponInstance = 0; weaponInstance < 3; weaponInstance++) {
+        for (let i = 0; i < weaponKeys.length; i++) {
+            const weaponType = weaponKeys[i];
+            const weapon = WEAPONS[weaponType];
+            
+            // Select zone for this weapon (cycle through zones)
+            const zone = weaponZones[weaponCount % weaponZones.length];
+            weaponCount++;
+            
+            // Create a weapon model with different colors for different types
+            const weaponGeometry = new THREE.BoxGeometry(1, 0.2, 0.5);
+            let weaponColor;
+            switch(weapon.model) {
+                case 'launcher': weaponColor = 0x444444; break;
+                case 'rifle1': weaponColor = 0x8B4513; break;
+                case 'rifle2': weaponColor = 0x2F4F4F; break;
+                case 'rifle3': weaponColor = 0x556B2F; break;
+                case 'rifle4': weaponColor = 0x800080; break;
+                case 'rifle5': weaponColor = 0xFF4500; break;
+                default: weaponColor = 0xff0000;
+            }
+            
+            const weaponMaterial = new THREE.MeshStandardMaterial({ color: weaponColor });
+            const weaponMesh = new THREE.Mesh(weaponGeometry, weaponMaterial);
+            
+            // Position within zone (random point within circle)
+            let x, z;
+            let attempts = 0;
+            do {
+                const angle = Math.random() * Math.PI * 2;
+                const distance = Math.random() * zone.radius;
+                x = zone.x + Math.cos(angle) * distance;
+                z = zone.z + Math.sin(angle) * distance;
+                attempts++;
+                
+                // Make sure weapon is not too close to walls or in blocked areas
+                if (Math.abs(x) < 48 && Math.abs(z) < 48) break;
+                
+            } while (attempts < 10);
+            
+            weaponMesh.position.set(x, 0.5, z);
+            weaponMesh.rotation.y = Math.random() * Math.PI * 2;
+            weaponMesh.castShadow = true;
+            
+            // Add floating animation
+            const floatHeight = 0.5 + Math.random() * 0.2;
+            const floatSpeed = 0.5 + Math.random() * 0.5;
+            weaponMesh.userData = {
+                baseY: floatHeight,
+                floatSpeed: floatSpeed,
+                floatTime: Math.random() * Math.PI * 2 // Random start phase
+            };
+            
+            // Add highlight effect (different color for different weapon types)
+            const highlightGeometry = new THREE.SphereGeometry(0.5, 8, 8);
+            const highlightMaterial = new THREE.MeshBasicMaterial({
+                color: weaponColor,
+                transparent: true,
+                opacity: 0.3
+            });
+            const highlight = new THREE.Mesh(highlightGeometry, highlightMaterial);
+            highlight.scale.set(2, 1, 2);
+            highlight.position.y = 0.1;
+            weaponMesh.add(highlight);
+            
+            itemsGroup.add(weaponMesh);
+            
+            // Add to game state
+            gameState.items.push({
+                type: 'weapon',
+                weapon: weapon,
+                position: new THREE.Vector3(x, floatHeight, z),
+                mesh: weaponMesh
+            });
+        }
     }
     
     // Spawn ammo more generously
@@ -950,6 +997,9 @@ function spawnWarehouseItems() {
     // High-value ammo cluster near exit
     createAmmoCluster(0, -40, 5, 5, ammoTypes[1]);
     
+    // Scatter coins throughout the warehouse
+    spawnWarehouseCoins();
+    
     // Add a few health items
     for (let i = 0; i < 3; i++) {
         const healthGeometry = new THREE.BoxGeometry(0.6, 0.6, 0.6);
@@ -992,6 +1042,510 @@ function spawnWarehouseItems() {
             mesh: healthMesh
         });
     }
+}
+
+// Spawn enemies for the warehouse stage (after 1 minute)
+function spawnWarehouseEnemies() {
+    const enemySpawnPoints = [
+        // Spawn around the edges of the warehouse
+        { x: -45, z: -45 }, { x: 45, z: -45 }, { x: -45, z: 45 }, { x: 45, z: 45 },
+        { x: -45, z: 0 }, { x: 45, z: 0 }, { x: 0, z: -45 }, { x: 0, z: 45 },
+        // Spawn in some sheltered areas
+        { x: -30, z: -30 }, { x: 30, z: -30 }, { x: -30, z: 30 }, { x: 30, z: 30 },
+        { x: -15, z: -35 }, { x: 15, z: -35 }, { x: -15, z: 35 }, { x: 15, z: 35 }
+    ];
+
+    // Spawn 8-12 enemies
+    const numEnemies = 8 + Math.floor(Math.random() * 5);
+    
+    for (let i = 0; i < numEnemies; i++) {
+        const spawnPoint = enemySpawnPoints[i % enemySpawnPoints.length];
+        
+        // Most enemies have knives (80% chance), some have pistols (20% chance)
+        const hasKnife = Math.random() < 0.8;
+        
+        createKnifeEnemy(spawnPoint.x, spawnPoint.z, hasKnife);
+    }
+}
+
+// Create a knife-wielding enemy
+function createKnifeEnemy(x, z, hasKnife = true) {
+    // Create enemy body
+    const enemyGeometry = new THREE.CapsuleGeometry(0.5, 1.5, 8, 16);
+    const enemyMaterial = new THREE.MeshStandardMaterial({ 
+        color: hasKnife ? 0x8B0000 : 0x4B0082 // Dark red for knife, dark blue for gun
+    });
+    const enemyMesh = new THREE.Mesh(enemyGeometry, enemyMaterial);
+    
+    enemyMesh.position.set(x, 1, z);
+    enemyMesh.castShadow = true;
+    
+    // Add simple face
+    const faceGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+    const faceMaterial = new THREE.MeshStandardMaterial({ color: 0xFFDBB5 });
+    const face = new THREE.Mesh(faceGeometry, faceMaterial);
+    face.position.y = 0.6;
+    enemyMesh.add(face);
+    
+    // Add weapon
+    if (hasKnife) {
+        // Create knife
+        const knifeHandle = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.03, 0.03, 0.3, 6),
+            new THREE.MeshStandardMaterial({ color: 0x8B4513 })
+        );
+        knifeHandle.position.set(0.4, 0, 0);
+        knifeHandle.rotation.z = Math.PI / 4;
+        
+        const knifeBlade = new THREE.Mesh(
+            new THREE.BoxGeometry(0.02, 0.4, 0.02),
+            new THREE.MeshStandardMaterial({ color: 0xC0C0C0 })
+        );
+        knifeBlade.position.set(0.55, 0.15, 0);
+        
+        enemyMesh.add(knifeHandle);
+        enemyMesh.add(knifeBlade);
+    } else {
+        // Create simple gun
+        const gun = new THREE.Mesh(
+            new THREE.BoxGeometry(0.05, 0.05, 0.3),
+            new THREE.MeshStandardMaterial({ color: 0x333333 })
+        );
+        gun.position.set(0.3, 0, 0.15);
+        enemyMesh.add(gun);
+    }
+    
+    enemiesGroup.add(enemyMesh);
+    
+    // Add enemy to game state
+    const enemy = {
+        mesh: enemyMesh,
+        position: new THREE.Vector3(x, 1, z),
+        health: hasKnife ? 50 : 75, // Knife enemies have less health
+        speed: hasKnife ? 0.03 : 0.02, // Knife enemies move faster
+        type: hasKnife ? 'knife' : 'gun',
+        weapon: hasKnife ? 'knife' : 'pistol',
+        damage: hasKnife ? 15 : 10,
+        attackRange: hasKnife ? 2 : 15, // Knife enemies need to get close
+        attackCooldown: 0,
+        maxAttackCooldown: hasKnife ? 1.5 : 3.0, // Knife attacks faster when in range
+        lastAttackTime: 0,
+        target: gameState.player.position,
+        state: 'moving', // 'moving', 'attacking', 'dead'
+        aggroRange: 25 // How far they can detect the player
+    };
+    
+    gameState.enemies.push(enemy);
+}
+
+// Spawn coins throughout the warehouse
+function spawnWarehouseCoins() {
+    // Create coin zones throughout the warehouse
+    const coinZones = [
+        // Corner areas
+        { x: -40, z: -40, radius: 8, count: 5 },
+        { x: 40, z: -40, radius: 8, count: 5 },
+        { x: -40, z: 40, radius: 8, count: 5 },
+        { x: 40, z: 40, radius: 8, count: 5 },
+        
+        // Wall areas
+        { x: 0, z: -45, radius: 6, count: 3 },
+        { x: 0, z: 45, radius: 6, count: 3 },
+        { x: -45, z: 0, radius: 6, count: 3 },
+        { x: 45, z: 0, radius: 6, count: 3 },
+        
+        // Inner areas
+        { x: -20, z: -20, radius: 5, count: 4 },
+        { x: 20, z: -20, radius: 5, count: 4 },
+        { x: -20, z: 20, radius: 5, count: 4 },
+        { x: 20, z: 20, radius: 5, count: 4 },
+        
+        // Central pathways
+        { x: 0, z: -20, radius: 4, count: 3 },
+        { x: 0, z: 20, radius: 4, count: 3 },
+        { x: -20, z: 0, radius: 4, count: 3 },
+        { x: 20, z: 0, radius: 4, count: 3 }
+    ];
+    
+    coinZones.forEach(zone => {
+        for (let i = 0; i < zone.count; i++) {
+            // Random position within zone
+            const angle = Math.random() * Math.PI * 2;
+            const distance = Math.random() * zone.radius;
+            const x = zone.x + Math.cos(angle) * distance;
+            const z = zone.z + Math.sin(angle) * distance;
+            
+            // Create coin with random value
+            const coinValue = Math.random() < 0.3 ? 10 : 5; // 30% chance for 10 coins, 70% for 5 coins
+            spawnCoin(x, z, coinValue);
+        }
+    });
+    
+    // Add some special high-value coins in harder to reach places
+    const specialCoins = [
+        { x: 0, z: 0, value: 25 }, // Center of warehouse
+        { x: -35, z: -35, value: 20 }, // Behind shelves
+        { x: 35, z: 35, value: 20 },
+        { x: 0, z: -45, value: 15 }, // Near exit
+    ];
+    
+    specialCoins.forEach(coin => {
+        spawnCoin(coin.x, coin.z, coin.value);
+    });
+}
+
+// Spawn a single coin
+function spawnCoin(x, z, value) {
+    // Create coin geometry
+    const coinGeometry = new THREE.CylinderGeometry(0.25, 0.25, 0.05, 16);
+    const coinMaterial = new THREE.MeshStandardMaterial({ 
+        color: value >= 20 ? 0xFFD700 : value >= 10 ? 0xFFA500 : 0xFFFF00, // Gold, orange, or yellow based on value
+        metalness: 0.8,
+        roughness: 0.2
+    });
+    
+    const coinMesh = new THREE.Mesh(coinGeometry, coinMaterial);
+    
+    // Position coin
+    const floatHeight = 0.3 + Math.random() * 0.2;
+    coinMesh.position.set(x, floatHeight, z);
+    coinMesh.rotation.x = Math.PI / 2; // Flat orientation
+    coinMesh.castShadow = true;
+    
+    // Add floating and spinning animation
+    coinMesh.userData = {
+        baseY: floatHeight,
+        floatSpeed: 1.0 + Math.random() * 0.5,
+        floatTime: Math.random() * Math.PI * 2,
+        rotationSpeed: 0.03 + Math.random() * 0.02,
+        value: value
+    };
+    
+    // Add glow effect for high-value coins
+    if (value >= 15) {
+        const glowGeometry = new THREE.SphereGeometry(0.4, 16, 16);
+        const glowMaterial = new THREE.MeshBasicMaterial({
+            color: value >= 20 ? 0xFFD700 : 0xFFA500,
+            transparent: true,
+            opacity: 0.2
+        });
+        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+        glow.position.set(0, -0.025, 0);
+        coinMesh.add(glow);
+    }
+    
+    // Add sparkle effect for special coins
+    if (value >= 20) {
+        for (let i = 0; i < 3; i++) {
+            const sparkleGeometry = new THREE.SphereGeometry(0.02, 8, 8);
+            const sparkleMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.8
+            });
+            const sparkle = new THREE.Mesh(sparkleGeometry, sparkleMaterial);
+            
+            const sparkleAngle = (Math.PI * 2 * i) / 3;
+            sparkle.position.set(
+                Math.cos(sparkleAngle) * 0.3,
+                Math.sin(sparkleAngle) * 0.1,
+                Math.sin(sparkleAngle) * 0.3
+            );
+            
+            coinMesh.add(sparkle);
+        }
+    }
+    
+    itemsGroup.add(coinMesh);
+    
+    // Add to game state
+    gameState.items.push({
+        type: 'coin',
+        value: value,
+        position: new THREE.Vector3(x, floatHeight, z),
+        mesh: coinMesh
+    });
+}
+
+// Setup arena stage (Stage 2)
+function setupArenaStage() {
+    // Create arena terrain
+    createArenaTerrain();
+    
+    // Spawn arena enemies
+    spawnArenaEnemies();
+    
+    // Team selection will be shown after this function
+}
+
+// Setup forest stage (Stage 3)
+function setupForestStage() {
+    // Boss battle will be implemented here
+    showPickupMessage("Forest stage is under development! Prepare for the final boss!", false);
+    
+    // Spawn boss enemy for testing
+    spawnForestBoss();
+}
+
+// Spawn enemies for arena stage
+function spawnArenaEnemies() {
+    const enemySpawnPoints = [
+        { x: -80, z: -30 }, { x: 80, z: -30 }, 
+        { x: -80, z: 30 }, { x: 80, z: 30 },
+        { x: -60, z: 0 }, { x: 60, z: 0 }
+    ];
+
+    // Spawn 6 enemies (3 red team, 3 blue team)
+    for (let i = 0; i < 6; i++) {
+        const spawnPoint = enemySpawnPoints[i];
+        const team = i < 3 ? 'red' : 'blue';
+        createTeamEnemy(spawnPoint.x, spawnPoint.z, team);
+    }
+}
+
+// Create team-based enemy
+function createTeamEnemy(x, z, team) {
+    // Create enemy body
+    const enemyGeometry = new THREE.CapsuleGeometry(0.5, 1.5, 8, 16);
+    const enemyMaterial = new THREE.MeshStandardMaterial({ 
+        color: team === 'red' ? 0x8B0000 : 0x000080
+    });
+    const enemyMesh = new THREE.Mesh(enemyGeometry, enemyMaterial);
+    
+    enemyMesh.position.set(x, 1, z);
+    enemyMesh.castShadow = true;
+    
+    // Add simple face
+    const faceGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+    const faceMaterial = new THREE.MeshStandardMaterial({ color: 0xFFDBB5 });
+    const face = new THREE.Mesh(faceGeometry, faceMaterial);
+    face.position.y = 0.6;
+    enemyMesh.add(face);
+    
+    // Add rifle
+    const rifleGeometry = new THREE.BoxGeometry(0.05, 0.05, 0.4);
+    const rifleMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const rifle = new THREE.Mesh(rifleGeometry, rifleMaterial);
+    rifle.position.set(0.3, 0, 0.2);
+    enemyMesh.add(rifle);
+    
+    enemiesGroup.add(enemyMesh);
+    
+    // Add enemy to game state
+    const enemy = {
+        mesh: enemyMesh,
+        position: new THREE.Vector3(x, 1, z),
+        health: 100,
+        speed: 0.02,
+        type: 'team',
+        team: team,
+        weapon: 'rifle',
+        damage: 15,
+        attackRange: 20,
+        attackCooldown: 0,
+        maxAttackCooldown: 2.0,
+        lastAttackTime: 0,
+        target: gameState.player.position,
+        state: 'moving',
+        aggroRange: 30
+    };
+    
+    gameState.enemies.push(enemy);
+}
+
+// Spawn forest boss
+function spawnForestBoss() {
+    // Create boss at center of forest
+    const bossGeometry = new THREE.CylinderGeometry(1, 1.5, 3, 8);
+    const bossMaterial = new THREE.MeshStandardMaterial({ color: 0x4A4A4A });
+    const bossMesh = new THREE.Mesh(bossGeometry, bossMaterial);
+    
+    bossMesh.position.set(0, 1.5, 0);
+    bossMesh.castShadow = true;
+    
+    // Add boss details
+    const eyeGeometry = new THREE.SphereGeometry(0.2, 8, 8);
+    const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    
+    const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    leftEye.position.set(-0.3, 1, 0.8);
+    bossMesh.add(leftEye);
+    
+    const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    rightEye.position.set(0.3, 1, 0.8);
+    bossMesh.add(rightEye);
+    
+    enemiesGroup.add(bossMesh);
+    
+    // Add boss to game state
+    const boss = {
+        mesh: bossMesh,
+        position: new THREE.Vector3(0, 1.5, 0),
+        health: 500, // Boss has lots of health
+        speed: 0.01, // Slower but powerful
+        type: 'boss',
+        weapon: 'rocket',
+        damage: 50,
+        attackRange: 40,
+        attackCooldown: 0,
+        maxAttackCooldown: 4.0,
+        lastAttackTime: 0,
+        target: gameState.player.position,
+        state: 'moving',
+        aggroRange: 50
+    };
+    
+    gameState.enemies.push(boss);
+}
+
+// Show team selection for Arena stage
+function showTeamSelection() {
+    // Clear existing checkpoint content
+    gameMessageElement.innerHTML = '';
+    
+    // Create team selection UI
+    const teamHeader = document.createElement('h2');
+    teamHeader.textContent = 'Choose Your Team!';
+    teamHeader.style.marginBottom = '20px';
+    teamHeader.style.color = 'white';
+    gameMessageElement.appendChild(teamHeader);
+    
+    const teamDesc = document.createElement('p');
+    teamDesc.textContent = 'Select which team you want to fight for in the arena:';
+    teamDesc.style.marginBottom = '30px';
+    teamDesc.style.color = 'white';
+    gameMessageElement.appendChild(teamDesc);
+    
+    // Team buttons container
+    const teamsContainer = document.createElement('div');
+    teamsContainer.style.display = 'flex';
+    teamsContainer.style.gap = '30px';
+    teamsContainer.style.marginBottom = '30px';
+    
+    // Red team button
+    const redTeamButton = document.createElement('button');
+    redTeamButton.innerHTML = `
+        <div style="font-size: 24px; margin-bottom: 10px;">🔴</div>
+        <div style="font-size: 18px; font-weight: bold;">RED TEAM</div>
+        <div style="font-size: 14px; margin-top: 5px;">Aggressive • High Damage</div>
+    `;
+    redTeamButton.style.cssText = `
+        padding: 20px;
+        background: linear-gradient(45deg, #e74c3c, #c0392b);
+        border: none;
+        border-radius: 10px;
+        color: white;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 5px 15px rgba(231, 76, 60, 0.4);
+        min-width: 150px;
+    `;
+    
+    redTeamButton.addEventListener('mouseenter', () => {
+        redTeamButton.style.transform = 'translateY(-3px)';
+        redTeamButton.style.boxShadow = '0 8px 25px rgba(231, 76, 60, 0.6)';
+    });
+    
+    redTeamButton.addEventListener('mouseleave', () => {
+        redTeamButton.style.transform = 'translateY(0)';
+        redTeamButton.style.boxShadow = '0 5px 15px rgba(231, 76, 60, 0.4)';
+    });
+    
+    redTeamButton.onclick = () => selectTeam('red');
+    
+    // Blue team button
+    const blueTeamButton = document.createElement('button');
+    blueTeamButton.innerHTML = `
+        <div style="font-size: 24px; margin-bottom: 10px;">🔵</div>
+        <div style="font-size: 18px; font-weight: bold;">BLUE TEAM</div>
+        <div style="font-size: 14px; margin-top: 5px;">Tactical • High Defense</div>
+    `;
+    blueTeamButton.style.cssText = `
+        padding: 20px;
+        background: linear-gradient(45deg, #3498db, #2980b9);
+        border: none;
+        border-radius: 10px;
+        color: white;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4);
+        min-width: 150px;
+    `;
+    
+    blueTeamButton.addEventListener('mouseenter', () => {
+        blueTeamButton.style.transform = 'translateY(-3px)';
+        blueTeamButton.style.boxShadow = '0 8px 25px rgba(52, 152, 219, 0.6)';
+    });
+    
+    blueTeamButton.addEventListener('mouseleave', () => {
+        blueTeamButton.style.transform = 'translateY(0)';
+        blueTeamButton.style.boxShadow = '0 5px 15px rgba(52, 152, 219, 0.4)';
+    });
+    
+    blueTeamButton.onclick = () => selectTeam('blue');
+    
+    teamsContainer.appendChild(redTeamButton);
+    teamsContainer.appendChild(blueTeamButton);
+    gameMessageElement.appendChild(teamsContainer);
+    
+    // Add back button
+    const backButton = document.createElement('button');
+    backButton.textContent = 'Back to Checkpoint';
+    backButton.style.cssText = `
+        padding: 10px 20px;
+        background: #666;
+        border: none;
+        border-radius: 5px;
+        color: white;
+        cursor: pointer;
+        margin-bottom: 20px;
+    `;
+    backButton.onclick = () => {
+        showCheckpoint();
+    };
+    gameMessageElement.appendChild(backButton);
+    
+    // Show current stats
+    const statsContainer = document.createElement('div');
+    statsContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+    statsContainer.style.padding = '15px';
+    statsContainer.style.borderRadius = '5px';
+    statsContainer.style.marginBottom = '20px';
+    
+    statsContainer.innerHTML = `
+        <div style="color: white; text-align: center;">
+            <div><strong>Your Current Stats:</strong></div>
+            <div>Health: ${gameState.player.health} | Coins: ${gameState.player.coins} | Weapons: ${gameState.player.inventory.filter(i => i.type === 'weapon').length}</div>
+        </div>
+    `;
+    gameMessageElement.appendChild(statsContainer);
+    
+    // Keep panel visible
+    gameMessageElement.style.display = 'block';
+}
+
+// Select team and start arena
+function selectTeam(team) {
+    gameState.player.team = team;
+    
+    // Show team selection confirmation
+    showPickupMessage(`You joined the ${team.toUpperCase()} team! Prepare for battle!`, false);
+    
+    // Position player on their team's side
+    if (team === 'red') {
+        gameState.player.position.set(-90, 1, 0);
+        camera.position.set(-90, 1.6, 0);
+    } else {
+        gameState.player.position.set(90, 1, 0);
+        camera.position.set(90, 1.6, 0);
+    }
+    
+    // Hide team selection panel
+    gameMessageElement.style.display = 'none';
+    gameMessageElement.innerHTML = '';
+    
+    // Start arena combat
+    gameContainer.requestPointerLock();
 }
 
 // Update function to handle floating animations for items
@@ -1056,11 +1610,20 @@ function checkCollisions() {
             // Handle collision based on item type
             switch(item.type) {
                 case 'weapon':
-                    gameState.player.inventory.push({
+                    const newWeapon = {
                         type: 'weapon',
                         weapon: item.weapon,
-                        ammo: 0
-                    });
+                        ammo: item.weapon.capacity // Start with full magazine
+                    };
+                    
+                    gameState.player.inventory.push(newWeapon);
+                    
+                    // Auto-equip first weapon
+                    if (gameState.player.currentWeaponIndex === -1) {
+                        gameState.player.currentWeaponIndex = 0;
+                        gameState.player.weapon = newWeapon;
+                        updateWeaponVisual();
+                    }
                     
                     // Display pickup message
                     showPickupMessage(`Picked up ${item.weapon.name}!`);
@@ -1158,6 +1721,9 @@ function startGame() {
     gameState.gameStarted = true;
     startButton.style.display = 'none';
     
+    // Add controls display
+    addControlsDisplay();
+    
     // Lock pointer for FPS controls
     gameContainer.requestPointerLock();
     
@@ -1165,6 +1731,21 @@ function startGame() {
     if (gameState.currentStage === STAGES.WAREHOUSE) {
         startTimer();
     }
+}
+
+// Ready for Stage 2 (triggered by U key)
+function readyForStage2() {
+    // Exit pointer lock
+    if (document.pointerLockElement === gameContainer) {
+        document.exitPointerLock();
+    }
+    
+    // Stop timer
+    stopTimer();
+    
+    // Go to checkpoint
+    gameState.stageCompleted = true;
+    showCheckpoint();
 }
 
 // Pause game
@@ -1214,6 +1795,16 @@ function animate() {
             }
             updateTimer();
         }
+
+        // Update enemy spawn timer for stage 1
+        if (gameState.currentStage === STAGES.WAREHOUSE && !gameState.enemySpawned) {
+            gameState.enemySpawnTimer -= delta;
+            if (gameState.enemySpawnTimer <= 0) {
+                spawnWarehouseEnemies();
+                gameState.enemySpawned = true;
+                showPickupMessage("Enemies have arrived! Watch out for knife-wielding attackers!", true);
+            }
+        }
     }
     
     renderer.render(scene, camera);
@@ -1229,8 +1820,8 @@ function updatePlayerPosition(delta) {
 
     if (gameState.keys['w'] || gameState.keys['arrowup']) moveZ -= 1;
     if (gameState.keys['s'] || gameState.keys['arrowdown']) moveZ += 1;
-    if (gameState.keys['a'] || gameState.keys['arrowleft']) moveX -= 1;
-    if (gameState.keys['d'] || gameState.keys['arrowright']) moveX += 1;
+    if (gameState.keys['a'] || gameState.keys['arrowleft']) moveX += 1;  // A = LEFT
+    if (gameState.keys['d'] || gameState.keys['arrowright']) moveX -= 1; // D = RIGHT
 
     if (moveX !== 0 || moveZ !== 0) {
         // Get camera direction
@@ -1298,33 +1889,157 @@ function constrainPlayerPosition() {
 
 // Update enemies
 function updateEnemies(delta) {
-    gameState.enemies.forEach(enemy => {
-        // Simple AI: move towards player if far away
+    gameState.enemies.forEach((enemy, index) => {
+        if (enemy.state === 'dead') return;
+        
         const distanceToPlayer = enemy.position.distanceTo(gameState.player.position);
         
-        if (distanceToPlayer > 20) {
-            // Move towards player
-            const direction = new THREE.Vector3()
-                .subVectors(gameState.player.position, enemy.position)
-                .normalize();
+        // Update attack cooldown
+        if (enemy.attackCooldown > 0) {
+            enemy.attackCooldown -= delta;
+        }
+        
+        // AI behavior based on distance and enemy type
+        if (distanceToPlayer <= enemy.aggroRange) {
+            // Player is within aggro range
             
-            // Keep on xz plane
-            direction.y = 0;
+            if (enemy.type === 'knife') {
+                // Knife enemy: rush toward player
+                if (distanceToPlayer > enemy.attackRange) {
+                    // Move toward player aggressively
+                    const direction = new THREE.Vector3()
+                        .subVectors(gameState.player.position, enemy.position)
+                        .normalize();
+                    
+                    direction.y = 0; // Keep on ground
+                    
+                    // Check for wall collisions
+                    const newPosition = enemy.position.clone().add(direction.multiplyScalar(enemy.speed));
+                    const enemyBox = new THREE.Box3().setFromCenterAndSize(
+                        newPosition,
+                        new THREE.Vector3(1, 2, 1)
+                    );
+                    
+                    let canMove = true;
+                    for (const wall of gameState.wallColliders) {
+                        if (enemyBox.intersectsBox(wall)) {
+                            canMove = false;
+                            break;
+                        }
+                    }
+                    
+                    if (canMove) {
+                        enemy.position.copy(newPosition);
+                        enemy.mesh.position.copy(enemy.position);
+                    }
+                    
+                    // Face player
+                    enemy.mesh.lookAt(gameState.player.position);
+                    enemy.state = 'moving';
+                } else {
+                    // Close enough to attack with knife
+                    if (enemy.attackCooldown <= 0) {
+                        // Attack!
+                        gameState.player.health -= enemy.damage;
+                        enemy.attackCooldown = enemy.maxAttackCooldown;
+                        
+                        // Create attack effect
+                        createEnemyAttackEffect(enemy.position);
+                        
+                        // Show damage message
+                        showPickupMessage(`Knife attack! -${enemy.damage} health!`, true);
+                        
+                        enemy.state = 'attacking';
+                        
+                        // Brief pause after attacking
+                        setTimeout(() => {
+                            if (enemy.state === 'attacking') {
+                                enemy.state = 'moving';
+                            }
+                        }, 500);
+                    }
+                    
+                    // Face player
+                    enemy.mesh.lookAt(gameState.player.position);
+                }
+            } else if (enemy.type === 'gun') {
+                // Gun enemy: keep distance and shoot
+                if (distanceToPlayer <= enemy.attackRange && distanceToPlayer > 5) {
+                    // Good shooting distance - attack
+                    if (enemy.attackCooldown <= 0) {
+                        // Check line of sight (simple raycast)
+                        const direction = new THREE.Vector3()
+                            .subVectors(gameState.player.position, enemy.position)
+                            .normalize();
+                        
+                        const raycaster = new THREE.Raycaster(enemy.position, direction);
+                        const intersects = raycaster.intersectObjects(terrainGroup.children);
+                        
+                        // If no walls blocking, shoot
+                        if (intersects.length === 0 || intersects[0].distance > distanceToPlayer) {
+                            gameState.player.health -= enemy.damage;
+                            enemy.attackCooldown = enemy.maxAttackCooldown;
+                            
+                            // Create shooting effect
+                            createEnemyShootEffect(enemy.position, gameState.player.position);
+                            
+                            showPickupMessage(`Shot by enemy! -${enemy.damage} health!`, true);
+                            
+                            enemy.state = 'attacking';
+                            setTimeout(() => {
+                                if (enemy.state === 'attacking') {
+                                    enemy.state = 'moving';
+                                }
+                            }, 300);
+                        }
+                    }
+                    
+                    // Face player
+                    enemy.mesh.lookAt(gameState.player.position);
+                } else if (distanceToPlayer > enemy.attackRange) {
+                    // Too far, move closer (but not too close)
+                    const direction = new THREE.Vector3()
+                        .subVectors(gameState.player.position, enemy.position)
+                        .normalize();
+                    
+                    direction.y = 0;
+                    enemy.position.add(direction.multiplyScalar(enemy.speed));
+                    enemy.mesh.position.copy(enemy.position);
+                    enemy.mesh.lookAt(gameState.player.position);
+                    enemy.state = 'moving';
+                } else {
+                    // Too close, back away
+                    const direction = new THREE.Vector3()
+                        .subVectors(enemy.position, gameState.player.position)
+                        .normalize();
+                    
+                    direction.y = 0;
+                    enemy.position.add(direction.multiplyScalar(enemy.speed * 0.5));
+                    enemy.mesh.position.copy(enemy.position);
+                    enemy.mesh.lookAt(gameState.player.position);
+                    enemy.state = 'moving';
+                }
+            }
+        } else {
+            // Player is out of range, patrol or idle
+            enemy.state = 'moving';
             
-            // Apply movement
-            enemy.position.add(direction.multiplyScalar(enemy.speed));
-            
-            // Update mesh position
-            enemy.mesh.position.copy(enemy.position);
-            
-            // Update rotation to face player
-            enemy.mesh.lookAt(gameState.player.position);
-        } else if (distanceToPlayer > 10) {
-            // Close enough to shoot but not too close
-            // Shooting logic would be implemented here
-            
-            // Just face the player
-            enemy.mesh.lookAt(gameState.player.position);
+            // Simple patrol: move randomly
+            if (Math.random() < 0.01) { // 1% chance per frame to change direction
+                const randomDirection = new THREE.Vector3(
+                    (Math.random() - 0.5) * 2,
+                    0,
+                    (Math.random() - 0.5) * 2
+                ).normalize();
+                
+                enemy.position.add(randomDirection.multiplyScalar(enemy.speed * 0.3));
+                enemy.mesh.position.copy(enemy.position);
+                
+                // Keep enemies within warehouse bounds
+                enemy.position.x = Math.max(-48, Math.min(48, enemy.position.x));
+                enemy.position.z = Math.max(-48, Math.min(48, enemy.position.z));
+                enemy.mesh.position.copy(enemy.position);
+            }
         }
     });
 }
@@ -1541,14 +2256,21 @@ function showCheckpoint() {
         // Advance to next stage
         gameState.currentStage++;
         gameState.stageCompleted = false;
-        setupStage(gameState.currentStage);
         
-        // Hide message and remove button
-        gameMessageElement.style.display = 'none';
-        gameMessageElement.innerHTML = '';
-        
-        // Lock pointer again
-        gameContainer.requestPointerLock();
+        // Special handling for Arena stage (team selection)
+        if (gameState.currentStage === STAGES.ARENA) {
+            setupStage(gameState.currentStage);
+            showTeamSelection();
+        } else {
+            setupStage(gameState.currentStage);
+            
+            // Hide message and remove button
+            gameMessageElement.style.display = 'none';
+            gameMessageElement.innerHTML = '';
+            
+            // Lock pointer again
+            gameContainer.requestPointerLock();
+        }
     };
     
     gameMessageElement.appendChild(proceedButton);
@@ -1770,22 +2492,57 @@ function updateUI() {
     healthValueElement.textContent = gameState.player.health;
     coinsValueElement.textContent = gameState.player.coins;
     
-    // Update ammo count for currently equipped weapon
-    const equippedWeapon = gameState.player.inventory.find(item => item.type === 'weapon');
-    if (equippedWeapon) {
-        ammoValueElement.textContent = equippedWeapon.ammo;
+    // Update ammo count and weapon name for currently equipped weapon
+    const currentWeapon = gameState.player.weapon;
+    if (currentWeapon) {
+        ammoValueElement.textContent = `${currentWeapon.ammo}/${currentWeapon.weapon.capacity}`;
+        
+        // Show current weapon name
+        let weaponNameElement = document.getElementById('current-weapon');
+        if (!weaponNameElement) {
+            weaponNameElement = document.createElement('div');
+            weaponNameElement.id = 'current-weapon';
+            weaponNameElement.style.position = 'absolute';
+            weaponNameElement.style.bottom = '60px';
+            weaponNameElement.style.right = '20px';
+            weaponNameElement.style.color = 'white';
+            weaponNameElement.style.fontSize = '18px';
+            weaponNameElement.style.fontFamily = 'Arial, sans-serif';
+            weaponNameElement.style.textShadow = '2px 2px 4px rgba(0,0,0,0.8)';
+            document.getElementById('game-container').appendChild(weaponNameElement);
+        }
+        weaponNameElement.textContent = currentWeapon.weapon.name;
+        
+        // Show reload status
+        if (gameState.player.isReloading) {
+            weaponNameElement.textContent += ' (Reloading...)';
+            weaponNameElement.style.color = 'yellow';
+        } else {
+            weaponNameElement.style.color = 'white';
+        }
     } else {
-        ammoValueElement.textContent = '0';
+        ammoValueElement.textContent = '0/0';
+        const weaponNameElement = document.getElementById('current-weapon');
+        if (weaponNameElement) {
+            weaponNameElement.textContent = 'No Weapon';
+        }
     }
     
     // Update inventory display
     inventoryElement.innerHTML = '';
-    gameState.player.inventory.forEach(item => {
+    gameState.player.inventory.forEach((item, index) => {
         const itemElement = document.createElement('div');
         itemElement.className = `inventory-item ${item.type}`;
         
         if (item.type === 'weapon') {
-            itemElement.textContent = `${item.weapon.name}: ${item.ammo}`;
+            const weaponNumber = gameState.player.inventory.filter(inv => inv.type === 'weapon').indexOf(item) + 1;
+            itemElement.textContent = `${weaponNumber}. ${item.weapon.name}: ${item.ammo}`;
+            
+            // Highlight current weapon
+            if (item === gameState.player.weapon) {
+                itemElement.style.backgroundColor = 'rgba(255, 255, 0, 0.3)';
+                itemElement.style.border = '1px solid yellow';
+            }
         } else if (item.type === 'ammo') {
             itemElement.textContent = `${item.ammoType} Ammo: ${item.count}`;
         } else {
@@ -1800,6 +2557,23 @@ function updateUI() {
 function handleKeyDown(e) {
     const key = e.key.toLowerCase();
     gameState.keys[key] = true;
+    
+    // Handle weapon switching (1-5 keys)
+    if (['1', '2', '3', '4', '5'].includes(key)) {
+        const weaponIndex = parseInt(key) - 1;
+        switchWeapon(weaponIndex);
+    }
+    
+    // Handle reload (R key)
+    if (key === 'r') {
+        reloadWeapon();
+    }
+    
+    // Handle ready for stage 2 (U key)
+    if (key === 'u' && gameState.currentStage === STAGES.WAREHOUSE && gameState.gameStarted) {
+        readyForStage2();
+    }
+    
     console.log('Key pressed:', key, 'Keys state:', gameState.keys); // Debug log
 }
 
@@ -1830,11 +2604,29 @@ function handleMouseDown(e) {
         // If game is not started or pointer is not locked, just return
         if (!gameState.gameStarted || !gameState.pointerLocked) return;
         
+        // Don't shoot if reloading
+        if (gameState.player.isReloading) return;
+        
         // Handle shooting
-        const equippedWeapon = gameState.player.inventory.find(item => item.type === 'weapon');
-        if (equippedWeapon && equippedWeapon.ammo > 0) {
+        const currentWeapon = gameState.player.weapon;
+        if (currentWeapon && currentWeapon.ammo > 0) {
             // Reduce ammo
-            equippedWeapon.ammo--;
+            currentWeapon.ammo--;
+            
+            // Create muzzle flash effect
+            createMuzzleFlash();
+            
+            // Add weapon recoil animation
+            if (weaponObject) {
+                const originalPosition = weaponObject.position.clone();
+                weaponObject.position.z += 0.05; // Recoil back
+                
+                setTimeout(() => {
+                    if (weaponObject) {
+                        weaponObject.position.copy(originalPosition);
+                    }
+                }, 100);
+            }
             
             // Create raycaster for shooting
             raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
@@ -1851,7 +2643,10 @@ function handleMouseDown(e) {
                     const enemy = gameState.enemies[enemyIndex];
                     
                     // Apply damage
-                    enemy.health -= equippedWeapon.weapon.damage;
+                    enemy.health -= currentWeapon.weapon.damage;
+                    
+                    // Create hit effect
+                    createHitEffect(intersects[0].point);
                     
                     if (enemy.health <= 0) {
                         // Enemy killed
@@ -1873,6 +2668,14 @@ function handleMouseDown(e) {
                             coinMesh.rotation.x = Math.PI / 2;
                             coinMesh.castShadow = true;
                             
+                            // Add floating animation
+                            coinMesh.userData = {
+                                baseY: 0.5,
+                                floatSpeed: 1.0,
+                                floatTime: Math.random() * Math.PI * 2,
+                                rotationSpeed: 0.05
+                            };
+                            
                             itemsGroup.add(coinMesh);
                             
                             // Add to game state
@@ -1885,10 +2688,19 @@ function handleMouseDown(e) {
                         }
                     }
                 }
+            } else {
+                // Create bullet impact effect on walls/terrain
+                const wallIntersects = raycaster.intersectObjects(terrainGroup.children);
+                if (wallIntersects.length > 0) {
+                    createBulletImpact(wallIntersects[0].point, wallIntersects[0].face.normal);
+                }
             }
             
             // Update UI
             updateUI();
+        } else if (currentWeapon && currentWeapon.ammo === 0) {
+            // Auto-reload when out of ammo
+            reloadWeapon();
         }
     }
 }
@@ -1897,6 +2709,882 @@ function handleMouseUp(e) {
     if (e.button === 0) { // Left mouse button
         mouseDown = false;
     }
+}
+
+// Weapon switching function
+function switchWeapon(weaponIndex) {
+    const weapons = gameState.player.inventory.filter(item => item.type === 'weapon');
+    
+    if (weaponIndex < weapons.length) {
+        gameState.player.currentWeaponIndex = weaponIndex;
+        gameState.player.weapon = weapons[weaponIndex];
+        
+        // Update weapon visual
+        updateWeaponVisual();
+        
+        // Show weapon switch message
+        showPickupMessage(`Switched to ${weapons[weaponIndex].weapon.name}`);
+    }
+}
+
+// Reload weapon function
+function reloadWeapon() {
+    if (gameState.player.isReloading) return;
+    
+    const currentWeapon = gameState.player.weapon;
+    if (!currentWeapon) return;
+    
+    // Check if we have ammo to reload
+    const ammoItem = gameState.player.inventory.find(item => 
+        item.type === 'ammo' && item.ammoType === currentWeapon.weapon.ammoType
+    );
+    
+    if (!ammoItem || ammoItem.count === 0) {
+        showPickupMessage("No ammo to reload!", true);
+        return;
+    }
+    
+    // Start reload process
+    gameState.player.isReloading = true;
+    gameState.player.reloadTime = 2.0; // 2 seconds reload time
+    
+    showPickupMessage("Reloading...");
+    
+    // Play reload animation
+    playReloadAnimation();
+    
+    setTimeout(() => {
+        if (gameState.player.isReloading) {
+            // Calculate how much ammo to reload
+            const ammoNeeded = currentWeapon.weapon.capacity - currentWeapon.ammo;
+            const ammoToReload = Math.min(ammoNeeded, ammoItem.count);
+            
+            // Transfer ammo
+            currentWeapon.ammo += ammoToReload;
+            ammoItem.count -= ammoToReload;
+            
+            // Remove ammo item if empty
+            if (ammoItem.count === 0) {
+                const index = gameState.player.inventory.indexOf(ammoItem);
+                gameState.player.inventory.splice(index, 1);
+            }
+            
+            gameState.player.isReloading = false;
+            showPickupMessage("Reload complete!");
+            updateUI();
+        }
+    }, 2000);
+}
+
+// Update weapon visual in first person view
+function updateWeaponVisual() {
+    // Clear existing weapon
+    while(weaponGroup.children.length > 0) {
+        weaponGroup.remove(weaponGroup.children[0]);
+    }
+    
+    const currentWeapon = gameState.player.weapon;
+    if (!currentWeapon) return;
+    
+    // Create weapon group for animations
+    const weaponMesh = new THREE.Group();
+    
+    // Create distinct weapon models based on type
+    switch(currentWeapon.weapon.model) {
+        case 'rifle1': // AK-74 - Classic assault rifle
+            createAK74Model(weaponMesh);
+            break;
+        case 'rifle2': // QBB95 - Bullpup design
+            createQBB95Model(weaponMesh);
+            break;
+        case 'rifle3': // AKM - Heavy assault rifle
+            createAKMModel(weaponMesh);
+            break;
+        case 'rifle4': // L86A2 - Light machine gun
+            createL86A2Model(weaponMesh);
+            break;
+        case 'rifle5': // AUG A3 - Modern bullpup
+            createAUGA3Model(weaponMesh);
+            break;
+        case 'launcher': // Rocket Launcher
+            createRocketLauncherModel(weaponMesh);
+            break;
+        default:
+            createDefaultWeaponModel(weaponMesh);
+    }
+    
+    // Position weapon in first person view
+    weaponMesh.position.set(0.3, -0.3, -0.8);
+    weaponMesh.rotation.set(0, 0, 0);
+    
+    weaponGroup.add(weaponMesh);
+    weaponObject = weaponMesh;
+}
+
+// Create AK-74 model (brown/wood finish)
+function createAK74Model(weaponGroup) {
+    // Main body
+    const bodyGeometry = new THREE.BoxGeometry(0.08, 0.12, 1.0);
+    const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    weaponGroup.add(body);
+    
+    // Barrel
+    const barrelGeometry = new THREE.CylinderGeometry(0.015, 0.015, 0.4, 12);
+    const barrelMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
+    barrel.position.set(0, 0.02, 0.7);
+    barrel.rotation.x = Math.PI / 2;
+    weaponGroup.add(barrel);
+    
+    // Stock
+    const stockGeometry = new THREE.BoxGeometry(0.06, 0.08, 0.3);
+    const stockMaterial = new THREE.MeshStandardMaterial({ color: 0x654321 });
+    const stock = new THREE.Mesh(stockGeometry, stockMaterial);
+    stock.position.set(0, -0.02, -0.65);
+    weaponGroup.add(stock);
+    
+    // Magazine
+    const magGeometry = new THREE.BoxGeometry(0.04, 0.15, 0.2);
+    const magMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const magazine = new THREE.Mesh(magGeometry, magMaterial);
+    magazine.position.set(0, -0.15, 0.1);
+    magazine.userData.isMagazine = true;
+    weaponGroup.add(magazine);
+    
+    // Grip
+    const gripGeometry = new THREE.BoxGeometry(0.04, 0.12, 0.08);
+    const gripMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+    const grip = new THREE.Mesh(gripGeometry, gripMaterial);
+    grip.position.set(0, -0.12, -0.1);
+    weaponGroup.add(grip);
+}
+
+// Create QBB95 model (dark gray, bullpup design)
+function createQBB95Model(weaponGroup) {
+    // Main body (longer, bullpup style)
+    const bodyGeometry = new THREE.BoxGeometry(0.1, 0.1, 1.2);
+    const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x2F4F4F });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    weaponGroup.add(body);
+    
+    // Barrel with bipod
+    const barrelGeometry = new THREE.CylinderGeometry(0.018, 0.018, 0.5, 12);
+    const barrelMaterial = new THREE.MeshStandardMaterial({ color: 0x111111 });
+    const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
+    barrel.position.set(0, 0.02, 0.85);
+    barrel.rotation.x = Math.PI / 2;
+    weaponGroup.add(barrel);
+    
+    // Bipod legs
+    const bipodGeometry = new THREE.CylinderGeometry(0.005, 0.005, 0.15, 6);
+    const bipodMaterial = new THREE.MeshStandardMaterial({ color: 0x444444 });
+    const bipodLeft = new THREE.Mesh(bipodGeometry, bipodMaterial);
+    bipodLeft.position.set(-0.08, -0.1, 0.6);
+    bipodLeft.rotation.z = Math.PI / 6;
+    weaponGroup.add(bipodLeft);
+    
+    const bipodRight = new THREE.Mesh(bipodGeometry, bipodMaterial);
+    bipodRight.position.set(0.08, -0.1, 0.6);
+    bipodRight.rotation.z = -Math.PI / 6;
+    weaponGroup.add(bipodRight);
+    
+    // Magazine (drum style)
+    const magGeometry = new THREE.CylinderGeometry(0.06, 0.06, 0.08, 16);
+    const magMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+    const magazine = new THREE.Mesh(magGeometry, magMaterial);
+    magazine.position.set(0, -0.12, 0.2);
+    magazine.userData.isMagazine = true;
+    weaponGroup.add(magazine);
+    
+    // Grip
+    const gripGeometry = new THREE.BoxGeometry(0.04, 0.1, 0.06);
+    const gripMaterial = new THREE.MeshStandardMaterial({ color: 0x2F4F4F });
+    const grip = new THREE.Mesh(gripGeometry, gripMaterial);
+    grip.position.set(0, -0.1, 0.4);
+    weaponGroup.add(grip);
+}
+
+// Create AKM model (olive green, heavy)
+function createAKMModel(weaponGroup) {
+    // Main body (thicker than AK-74)
+    const bodyGeometry = new THREE.BoxGeometry(0.09, 0.14, 1.1);
+    const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x556B2F });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    weaponGroup.add(body);
+    
+    // Heavy barrel
+    const barrelGeometry = new THREE.CylinderGeometry(0.02, 0.02, 0.45, 12);
+    const barrelMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+    const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
+    barrel.position.set(0, 0.03, 0.75);
+    barrel.rotation.x = Math.PI / 2;
+    weaponGroup.add(barrel);
+    
+    // Muzzle brake
+    const muzzleGeometry = new THREE.CylinderGeometry(0.025, 0.02, 0.08, 8);
+    const muzzleMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const muzzle = new THREE.Mesh(muzzleGeometry, muzzleMaterial);
+    muzzle.position.set(0, 0.03, 1.15);
+    muzzle.rotation.x = Math.PI / 2;
+    weaponGroup.add(muzzle);
+    
+    // Stock
+    const stockGeometry = new THREE.BoxGeometry(0.07, 0.09, 0.35);
+    const stockMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+    const stock = new THREE.Mesh(stockGeometry, stockMaterial);
+    stock.position.set(0, -0.01, -0.7);
+    weaponGroup.add(stock);
+    
+    // Magazine (curved)
+    const magGeometry = new THREE.BoxGeometry(0.045, 0.18, 0.25);
+    const magMaterial = new THREE.MeshStandardMaterial({ color: 0x2a2a2a });
+    const magazine = new THREE.Mesh(magGeometry, magMaterial);
+    magazine.position.set(0, -0.16, 0.05);
+    magazine.rotation.x = -0.2; // Slight curve
+    magazine.userData.isMagazine = true;
+    weaponGroup.add(magazine);
+    
+    // Grip
+    const gripGeometry = new THREE.BoxGeometry(0.045, 0.14, 0.09);
+    const gripMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+    const grip = new THREE.Mesh(gripGeometry, gripMaterial);
+    grip.position.set(0, -0.13, -0.15);
+    weaponGroup.add(grip);
+}
+
+// Create L86A2 model (purple/black, light machine gun)
+function createL86A2Model(weaponGroup) {
+    // Main body (long and sleek)
+    const bodyGeometry = new THREE.BoxGeometry(0.08, 0.11, 1.3);
+    const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x800080 });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    weaponGroup.add(body);
+    
+    // Long barrel
+    const barrelGeometry = new THREE.CylinderGeometry(0.016, 0.016, 0.6, 12);
+    const barrelMaterial = new THREE.MeshStandardMaterial({ color: 0x0a0a0a });
+    const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
+    barrel.position.set(0, 0.02, 0.95);
+    barrel.rotation.x = Math.PI / 2;
+    weaponGroup.add(barrel);
+    
+    // Carrying handle
+    const handleGeometry = new THREE.TorusGeometry(0.04, 0.008, 6, 12, Math.PI);
+    const handleMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const handle = new THREE.Mesh(handleGeometry, handleMaterial);
+    handle.position.set(0, 0.08, 0.2);
+    handle.rotation.x = Math.PI / 2;
+    weaponGroup.add(handle);
+    
+    // Stock
+    const stockGeometry = new THREE.BoxGeometry(0.06, 0.08, 0.25);
+    const stockMaterial = new THREE.MeshStandardMaterial({ color: 0x4B0082 });
+    const stock = new THREE.Mesh(stockGeometry, stockMaterial);
+    stock.position.set(0, -0.01, -0.6);
+    weaponGroup.add(stock);
+    
+    // Magazine (long)
+    const magGeometry = new THREE.BoxGeometry(0.04, 0.2, 0.15);
+    const magMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+    const magazine = new THREE.Mesh(magGeometry, magMaterial);
+    magazine.position.set(0, -0.17, 0.1);
+    magazine.userData.isMagazine = true;
+    weaponGroup.add(magazine);
+    
+    // Grip
+    const gripGeometry = new THREE.BoxGeometry(0.04, 0.12, 0.07);
+    const gripMaterial = new THREE.MeshStandardMaterial({ color: 0x800080 });
+    const grip = new THREE.Mesh(gripGeometry, gripMaterial);
+    grip.position.set(0, -0.11, -0.1);
+    weaponGroup.add(grip);
+}
+
+// Create AUG A3 model (orange, modern bullpup)
+function createAUGA3Model(weaponGroup) {
+    // Main body (futuristic bullpup)
+    const bodyGeometry = new THREE.BoxGeometry(0.09, 0.12, 1.1);
+    const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xFF4500 });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    weaponGroup.add(body);
+    
+    // Barrel with integrated scope
+    const barrelGeometry = new THREE.CylinderGeometry(0.017, 0.017, 0.4, 12);
+    const barrelMaterial = new THREE.MeshStandardMaterial({ color: 0x111111 });
+    const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
+    barrel.position.set(0, 0.02, 0.75);
+    barrel.rotation.x = Math.PI / 2;
+    weaponGroup.add(barrel);
+    
+    // Integrated scope
+    const scopeGeometry = new THREE.BoxGeometry(0.03, 0.04, 0.2);
+    const scopeMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    const scope = new THREE.Mesh(scopeGeometry, scopeMaterial);
+    scope.position.set(0, 0.08, 0.3);
+    weaponGroup.add(scope);
+    
+    // Magazine (transparent style)
+    const magGeometry = new THREE.BoxGeometry(0.04, 0.16, 0.18);
+    const magMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x444444,
+        transparent: true,
+        opacity: 0.7
+    });
+    const magazine = new THREE.Mesh(magGeometry, magMaterial);
+    magazine.position.set(0, -0.14, 0.15);
+    magazine.userData.isMagazine = true;
+    weaponGroup.add(magazine);
+    
+    // Grip (integrated)
+    const gripGeometry = new THREE.BoxGeometry(0.04, 0.1, 0.06);
+    const gripMaterial = new THREE.MeshStandardMaterial({ color: 0xFF4500 });
+    const grip = new THREE.Mesh(gripGeometry, gripMaterial);
+    grip.position.set(0, -0.1, 0.4);
+    weaponGroup.add(grip);
+}
+
+// Create Rocket Launcher model
+function createRocketLauncherModel(weaponGroup) {
+    // Main tube
+    const tubeGeometry = new THREE.CylinderGeometry(0.08, 0.08, 1.2, 12);
+    const tubeMaterial = new THREE.MeshStandardMaterial({ color: 0x444444 });
+    const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
+    tube.rotation.x = Math.PI / 2;
+    weaponGroup.add(tube);
+    
+    // Grip
+    const gripGeometry = new THREE.BoxGeometry(0.04, 0.12, 0.06);
+    const gripMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const grip = new THREE.Mesh(gripGeometry, gripMaterial);
+    grip.position.set(0, -0.12, 0.2);
+    weaponGroup.add(grip);
+    
+    // Trigger guard
+    const triggerGeometry = new THREE.TorusGeometry(0.03, 0.005, 6, 12, Math.PI);
+    const triggerMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    const trigger = new THREE.Mesh(triggerGeometry, triggerMaterial);
+    trigger.position.set(0, -0.08, 0.15);
+    weaponGroup.add(trigger);
+    
+    // Sight
+    const sightGeometry = new THREE.BoxGeometry(0.02, 0.03, 0.08);
+    const sightMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    const sight = new THREE.Mesh(sightGeometry, sightMaterial);
+    sight.position.set(0, 0.1, 0.3);
+    weaponGroup.add(sight);
+}
+
+// Create default weapon model
+function createDefaultWeaponModel(weaponGroup) {
+    const bodyGeometry = new THREE.BoxGeometry(0.08, 0.1, 1.0);
+    const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x666666 });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    weaponGroup.add(body);
+    
+    const barrelGeometry = new THREE.CylinderGeometry(0.015, 0.015, 0.3, 8);
+    const barrelMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
+    barrel.position.set(0, 0, 0.65);
+    barrel.rotation.x = Math.PI / 2;
+    weaponGroup.add(barrel);
+}
+
+// Play reload animation
+function playReloadAnimation() {
+    if (!weaponObject) return;
+    
+    // Find the magazine in the weapon model
+    let magazine = null;
+    weaponObject.traverse((child) => {
+        if (child.userData && child.userData.isMagazine) {
+            magazine = child;
+        }
+    });
+    
+    if (!magazine) return;
+    
+    // Store original position
+    const originalPosition = magazine.position.clone();
+    const originalRotation = magazine.rotation.clone();
+    
+    // Animation phases
+    let animationPhase = 0; // 0: drop mag, 1: pause, 2: insert new mag
+    let animationTime = 0;
+    const totalAnimationTime = 2000; // 2 seconds
+    
+    const animateReload = () => {
+        animationTime += 16; // ~60fps
+        const progress = animationTime / totalAnimationTime;
+        
+        if (progress < 0.3) {
+            // Phase 1: Drop magazine (first 30% of animation)
+            const dropProgress = progress / 0.3;
+            magazine.position.y = originalPosition.y - dropProgress * 0.3;
+            magazine.rotation.x = originalRotation.x + dropProgress * 0.5;
+            magazine.material.opacity = 1 - dropProgress * 0.5;
+        } else if (progress < 0.7) {
+            // Phase 2: Magazine is "out" (30-70% of animation)
+            magazine.position.y = originalPosition.y - 0.3;
+            magazine.rotation.x = originalRotation.x + 0.5;
+            magazine.material.opacity = 0.5;
+        } else {
+            // Phase 3: Insert new magazine (last 30% of animation)
+            const insertProgress = (progress - 0.7) / 0.3;
+            magazine.position.y = originalPosition.y - 0.3 + insertProgress * 0.3;
+            magazine.rotation.x = originalRotation.x + 0.5 - insertProgress * 0.5;
+            magazine.material.opacity = 0.5 + insertProgress * 0.5;
+        }
+        
+        // Add weapon bobbing during reload
+        const bobAmount = Math.sin(progress * Math.PI * 4) * 0.02;
+        weaponObject.position.y = -0.3 + bobAmount;
+        weaponObject.rotation.z = Math.sin(progress * Math.PI * 2) * 0.1;
+        
+        if (progress < 1 && gameState.player.isReloading) {
+            requestAnimationFrame(animateReload);
+        } else {
+            // Reset weapon position
+            weaponObject.position.y = -0.3;
+            weaponObject.rotation.z = 0;
+            
+            // Reset magazine
+            magazine.position.copy(originalPosition);
+            magazine.rotation.copy(originalRotation);
+            magazine.material.opacity = 1;
+        }
+    };
+    
+    animateReload();
+}
+
+// Create proper start panel
+function createStartPanel() {
+    // Remove existing title and start button
+    const existingTitle = document.querySelector('h1');
+    if (existingTitle) existingTitle.remove();
+    
+    if (startButton) startButton.style.display = 'none';
+    
+    // Create start panel overlay
+    const startPanel = document.createElement('div');
+    startPanel.id = 'start-panel';
+    startPanel.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, rgba(0,0,0,0.9), rgba(20,20,50,0.9));
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+        font-family: 'Arial', sans-serif;
+        color: white;
+    `;
+    
+    // Game title
+    const title = document.createElement('h1');
+    title.textContent = 'HUNTER GAMES 3D';
+    title.style.cssText = `
+        font-size: 4rem;
+        margin-bottom: 1rem;
+        text-shadow: 3px 3px 6px rgba(0,0,0,0.8);
+        background: linear-gradient(45deg, #ff6b6b, #feca57, #48dbfb, #ff9ff3);
+        background-size: 400% 400%;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        animation: gradientShift 3s ease-in-out infinite;
+    `;
+    
+    // Add gradient animation
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes gradientShift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+        .start-button {
+            padding: 15px 30px;
+            margin: 10px;
+            background: linear-gradient(45deg, #e74c3c, #c0392b);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 1.2rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
+        }
+        .start-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(231, 76, 60, 0.6);
+            background: linear-gradient(45deg, #c0392b, #a93226);
+        }
+        .skip-button {
+            background: linear-gradient(45deg, #f39c12, #e67e22) !important;
+            box-shadow: 0 4px 15px rgba(243, 156, 18, 0.4) !important;
+        }
+        .skip-button:hover {
+            background: linear-gradient(45deg, #e67e22, #d35400) !important;
+            box-shadow: 0 6px 20px rgba(243, 156, 18, 0.6) !important;
+        }
+    `;
+    document.head.appendChild(style);
+    
+    // Subtitle
+    const subtitle = document.createElement('p');
+    subtitle.textContent = 'Survive. Collect. Dominate.';
+    subtitle.style.cssText = `
+        font-size: 1.5rem;
+        margin-bottom: 3rem;
+        opacity: 0.8;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+    `;
+    
+    // Game description
+    const description = document.createElement('div');
+    description.innerHTML = `
+        <p style="text-align: center; max-width: 600px; line-height: 1.6; margin-bottom: 2rem; opacity: 0.9;">
+            Welcome to the ultimate survival arena. Navigate through three deadly stages:
+            <br><br>
+            <strong>Stage 1:</strong> The Warehouse - Collect weapons and coins before enemies arrive
+            <br>
+            <strong>Stage 2:</strong> Reds or Blues - Choose your team and fight for dominance
+            <br>
+            <strong>Stage 3:</strong> The Billionaire Hunter - Face the final boss
+        </p>
+    `;
+    
+    // Controls info
+    const controls = document.createElement('div');
+    controls.innerHTML = `
+        <div style="text-align: center; margin-bottom: 2rem; opacity: 0.8; font-size: 0.9rem;">
+            <strong>Controls:</strong> WASD - Move | Mouse - Look | 1-5 - Switch Weapons | R - Reload | U - Ready for Stage 2 | Left Click - Shoot
+        </div>
+    `;
+    
+    // Button container
+    const buttonContainer = document.createElement('div');
+    buttonContainer.style.cssText = `
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 15px;
+    `;
+    
+    // Start game button
+    const newStartButton = document.createElement('button');
+    newStartButton.textContent = 'Start Stage 1: The Warehouse';
+    newStartButton.className = 'start-button';
+    newStartButton.addEventListener('click', () => {
+        startPanel.remove();
+        startGame();
+    });
+    
+    // Skip to stage 2 button
+    const skipButton = document.createElement('button');
+    skipButton.textContent = 'Ready for Stage 2? Skip to Checkpoint';
+    skipButton.className = 'start-button skip-button';
+    skipButton.addEventListener('click', () => {
+        startPanel.remove();
+        skipToStage2();
+    });
+    
+    // Add elements to panel
+    startPanel.appendChild(title);
+    startPanel.appendChild(subtitle);
+    startPanel.appendChild(description);
+    startPanel.appendChild(controls);
+    
+    buttonContainer.appendChild(newStartButton);
+    buttonContainer.appendChild(skipButton);
+    startPanel.appendChild(buttonContainer);
+    
+    document.body.appendChild(startPanel);
+}
+
+// Skip to stage 2 checkpoint
+function skipToStage2() {
+    // Give player starting equipment for stage 2
+    gameState.player.health = 100;
+    gameState.player.coins = 100; // Give more coins for the skip option
+    gameState.player.kills = 5; // Give some "experience"
+    
+    // Give player a basic weapon with full ammo
+    const basicWeapon = {
+        type: 'weapon',
+        weapon: WEAPONS.AK74,
+        ammo: WEAPONS.AK74.capacity // Start with full magazine
+    };
+    gameState.player.inventory.push(basicWeapon);
+    gameState.player.weapon = basicWeapon;
+    gameState.player.currentWeaponIndex = 0;
+    
+    // Add some extra ammo
+    gameState.player.inventory.push({
+        type: 'ammo',
+        ammoType: 'rifle',
+        count: 90
+    });
+    
+    // Add a backup weapon
+    const backupWeapon = {
+        type: 'weapon',
+        weapon: WEAPONS.QBB95,
+        ammo: WEAPONS.QBB95.capacity
+    };
+    gameState.player.inventory.push(backupWeapon);
+    
+    // Add some rockets for variety
+    gameState.player.inventory.push({
+        type: 'ammo',
+        ammoType: 'rocket',
+        count: 3
+    });
+    
+    // Set up for stage 2 checkpoint
+    gameState.currentStage = STAGES.WAREHOUSE; // Stay at warehouse stage but show checkpoint
+    gameState.stageCompleted = true;
+    gameState.gameStarted = true;
+    
+    // Create basic warehouse terrain for the checkpoint
+    setupStage(STAGES.WAREHOUSE);
+    
+    updateWeaponVisual();
+    updateUI();
+    showCheckpoint();
+}
+
+// Create muzzle flash effect
+function createMuzzleFlash() {
+    if (!weaponObject) return;
+    
+    // Remove existing muzzle flash
+    if (muzzleFlash) {
+        weaponObject.remove(muzzleFlash);
+    }
+    
+    // Create new muzzle flash
+    const flashGeometry = new THREE.SphereGeometry(0.1, 8, 8);
+    const flashMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xffff00,
+        transparent: true,
+        opacity: 0.8
+    });
+    
+    muzzleFlash = new THREE.Mesh(flashGeometry, flashMaterial);
+    muzzleFlash.position.set(0, 0, 0.7);
+    weaponObject.add(muzzleFlash);
+    
+    // Animate muzzle flash
+    let flashTime = 0;
+    const flashDuration = 0.1;
+    
+    const animateFlash = () => {
+        flashTime += 0.016; // ~60fps
+        
+        if (flashTime < flashDuration) {
+            muzzleFlash.material.opacity = 0.8 * (1 - flashTime / flashDuration);
+            muzzleFlash.scale.setScalar(1 + flashTime * 5);
+            requestAnimationFrame(animateFlash);
+        } else {
+            weaponObject.remove(muzzleFlash);
+            muzzleFlash = null;
+        }
+    };
+    
+    animateFlash();
+}
+
+// Create hit effect when enemy is hit
+function createHitEffect(position) {
+    const hitGeometry = new THREE.SphereGeometry(0.2, 8, 8);
+    const hitMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xff0000,
+        transparent: true,
+        opacity: 0.8
+    });
+    
+    const hitEffect = new THREE.Mesh(hitGeometry, hitMaterial);
+    hitEffect.position.copy(position);
+    effectsGroup.add(hitEffect);
+    
+    // Animate hit effect
+    let effectTime = 0;
+    const effectDuration = 0.3;
+    
+    const animateHit = () => {
+        effectTime += 0.016;
+        
+        if (effectTime < effectDuration) {
+            hitEffect.material.opacity = 0.8 * (1 - effectTime / effectDuration);
+            hitEffect.scale.setScalar(1 + effectTime * 3);
+            requestAnimationFrame(animateHit);
+        } else {
+            effectsGroup.remove(hitEffect);
+        }
+    };
+    
+    animateHit();
+}
+
+// Create bullet impact effect on walls
+function createBulletImpact(position, normal) {
+    // Create spark particles
+    for (let i = 0; i < 5; i++) {
+        const sparkGeometry = new THREE.SphereGeometry(0.02, 4, 4);
+        const sparkMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0xffaa00,
+            transparent: true,
+            opacity: 1.0
+        });
+        
+        const spark = new THREE.Mesh(sparkGeometry, sparkMaterial);
+        spark.position.copy(position);
+        
+        // Random direction influenced by surface normal
+        const direction = new THREE.Vector3(
+            (Math.random() - 0.5) * 2,
+            (Math.random() - 0.5) * 2,
+            (Math.random() - 0.5) * 2
+        );
+        direction.add(normal.multiplyScalar(2));
+        direction.normalize();
+        
+        spark.userData = {
+            velocity: direction.multiplyScalar(0.1 + Math.random() * 0.1),
+            life: 0.5 + Math.random() * 0.3
+        };
+        
+        effectsGroup.add(spark);
+        
+        // Animate spark
+        const animateSpark = () => {
+            spark.userData.life -= 0.016;
+            
+            if (spark.userData.life > 0) {
+                spark.position.add(spark.userData.velocity);
+                spark.userData.velocity.y -= 0.005; // Gravity
+                spark.material.opacity = spark.userData.life / 0.8;
+                requestAnimationFrame(animateSpark);
+            } else {
+                effectsGroup.remove(spark);
+            }
+        };
+        
+        animateSpark();
+    }
+}
+
+// Create enemy attack effect
+function createEnemyAttackEffect(position) {
+    const attackGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+    const attackMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xff4444,
+        transparent: true,
+        opacity: 0.9
+    });
+    
+    const attackEffect = new THREE.Mesh(attackGeometry, attackMaterial);
+    attackEffect.position.copy(position);
+    attackEffect.position.y += 0.5;
+    effectsGroup.add(attackEffect);
+    
+    // Animate attack effect
+    let effectTime = 0;
+    const effectDuration = 0.4;
+    
+    const animateAttack = () => {
+        effectTime += 0.016;
+        
+        if (effectTime < effectDuration) {
+            attackEffect.material.opacity = 0.9 * (1 - effectTime / effectDuration);
+            attackEffect.scale.setScalar(1 + effectTime * 4);
+            attackEffect.rotation.y += 0.2;
+            requestAnimationFrame(animateAttack);
+        } else {
+            effectsGroup.remove(attackEffect);
+        }
+    };
+    
+    animateAttack();
+}
+
+// Create enemy shooting effect
+function createEnemyShootEffect(fromPosition, toPosition) {
+    // Create bullet trail
+    const trailGeometry = new THREE.CylinderGeometry(0.02, 0.02, fromPosition.distanceTo(toPosition), 8);
+    const trailMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xffff00,
+        transparent: true,
+        opacity: 0.8
+    });
+    
+    const trail = new THREE.Mesh(trailGeometry, trailMaterial);
+    
+    // Position and orient the trail
+    const midPoint = new THREE.Vector3().addVectors(fromPosition, toPosition).multiplyScalar(0.5);
+    trail.position.copy(midPoint);
+    trail.lookAt(toPosition);
+    trail.rotation.x += Math.PI / 2;
+    
+    effectsGroup.add(trail);
+    
+    // Create muzzle flash at enemy position
+    const flashGeometry = new THREE.SphereGeometry(0.15, 8, 8);
+    const flashMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xffaa00,
+        transparent: true,
+        opacity: 1.0
+    });
+    
+    const flash = new THREE.Mesh(flashGeometry, flashMaterial);
+    flash.position.copy(fromPosition);
+    flash.position.y += 0.5;
+    effectsGroup.add(flash);
+    
+    // Animate effects
+    let effectTime = 0;
+    const effectDuration = 0.15;
+    
+    const animateShoot = () => {
+        effectTime += 0.016;
+        
+        if (effectTime < effectDuration) {
+            const opacity = 1 - effectTime / effectDuration;
+            trail.material.opacity = opacity * 0.8;
+            flash.material.opacity = opacity;
+            flash.scale.setScalar(1 + effectTime * 5);
+            requestAnimationFrame(animateShoot);
+        } else {
+            effectsGroup.remove(trail);
+            effectsGroup.remove(flash);
+        }
+    };
+    
+    animateShoot();
+}
+
+// Add controls display
+function addControlsDisplay() {
+    const controlsDiv = document.createElement('div');
+    controlsDiv.id = 'controls-info';
+    controlsDiv.innerHTML = `
+        <div style="position: absolute; top: 10px; left: 10px; color: white; font-family: Arial; font-size: 14px; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); opacity: 0.8;">
+            <div>WASD - Move</div>
+            <div>Mouse - Look</div>
+            <div>1-5 - Switch Weapons</div>
+            <div>R - Reload</div>
+            <div>U - Ready for Stage 2</div>
+            <div>Left Click - Shoot</div>
+        </div>
+    `;
+    document.getElementById('game-container').appendChild(controlsDiv);
 }
 
 // Add timer UI element
