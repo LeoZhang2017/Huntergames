@@ -309,6 +309,7 @@ function clearStage() {
     // Clear arrays
     gameState.enemies = [];
     gameState.items = [];
+    gameState.wallColliders = []; // Clear collision boxes
 }
 
 // Create terrain based on current stage
@@ -691,6 +692,8 @@ function createArenaTerrain() {
         );
         gameState.wallColliders.push(box);
     });
+    
+    console.log('Arena collision boxes created:', gameState.wallColliders.length); // Debug
 }
 
 // Create obstacles for the arena
@@ -1899,6 +1902,7 @@ function updatePlayerPosition(delta) {
         for (const wall of gameState.wallColliders) {
             if (playerBox.intersectsBox(wall)) {
                 canMove = false;
+                console.log('Collision detected!', wall); // Debug
                 break;
             }
         }
