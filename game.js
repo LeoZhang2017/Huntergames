@@ -1210,13 +1210,69 @@ function animate() {
             if (gameState.timer <= 0) {
                 gameState.timer = 0;
                 gameState.timerActive = false;
-                gameOver(false); // Game over if time runs out
+                // Transition to next stage instead of game over
+                transitionToNextStage();
             }
             updateTimer();
         }
     }
     
     renderer.render(scene, camera);
+}
+
+// Add new function for stage transition
+function transitionToNextStage() {
+    // Save current state
+    const playerState = {
+        health: gameState.player.health,
+        inventory: gameState.player.inventory,
+        weapons: gameState.player.weapon
+    };
+    localStorage.setItem('playerState', JSON.stringify(playerState));
+    
+    // Create teleport effect
+    const teleportOverlay = document.createElement('div');
+    teleportOverlay.style.position = 'fixed';
+    teleportOverlay.style.top = '0';
+    teleportOverlay.style.left = '0';
+    teleportOverlay.style.width = '100%';
+    teleportOverlay.style.height = '100%';
+    teleportOverlay.style.backgroundColor = 'black';
+    teleportOverlay.style.opacity = '0';
+    teleportOverlay.style.transition = 'opacity 1s ease-in-out';
+    teleportOverlay.style.zIndex = '1000';
+    
+    document.body.appendChild(teleportOverlay);
+    
+    // Fade in
+    setTimeout(() => {
+        teleportOverlay.style.opacity = '1';
+        
+        // After fade in, initialize next stage
+        setTimeout(() => {
+            // Update stage
+            gameState.currentStage = STAGES.ARENA;
+            
+            // Reset and start timer for Stage 2 (10 minutes)
+            gameState.timer = 600; // 10 minutes in seconds
+            gameState.timerActive = true;
+            
+            // Load saved state
+            const savedState = JSON.parse(localStorage.getItem('playerState') || '{}');
+            if (savedState.health) gameState.player.health = savedState.health;
+            if (savedState.inventory) gameState.player.inventory = savedState.inventory;
+            if (savedState.weapons) gameState.player.weapon = savedState.weapons;
+            
+            // Initialize Stage 2 environment
+            setupStage(STAGES.ARENA);
+            
+            // Fade out teleport effect
+            teleportOverlay.style.opacity = '0';
+            setTimeout(() => {
+                document.body.removeChild(teleportOverlay);
+            }, 1000);
+        }, 1500);
+    }, 100);
 }
 
 // Update player position based on keyboard input
