@@ -1870,8 +1870,8 @@ function updatePlayerPosition(delta) {
 
     if (gameState.keys['w'] || gameState.keys['arrowup']) moveZ -= 1;
     if (gameState.keys['s'] || gameState.keys['arrowdown']) moveZ += 1;
-    if (gameState.keys['a'] || gameState.keys['arrowleft']) moveX += 1;  // A = LEFT
-    if (gameState.keys['d'] || gameState.keys['arrowright']) moveX -= 1; // D = RIGHT
+    if (gameState.keys['a'] || gameState.keys['arrowleft']) moveX -= 1;
+    if (gameState.keys['d'] || gameState.keys['arrowright']) moveX += 1;
 
     if (moveX !== 0 || moveZ !== 0) {
         // Get camera direction
@@ -1889,29 +1889,43 @@ function updatePlayerPosition(delta) {
         movement.addScaledVector(cameraDirection, -moveZ * gameState.moveSpeed);
         movement.addScaledVector(rightVector, moveX * gameState.moveSpeed);
 
-        // Calculate new position
-        const newPosition = gameState.player.position.clone().add(movement);
-
-        // Check wall collisions
-        const playerBox = new THREE.Box3().setFromCenterAndSize(
-            newPosition,
+        // Try moving on X axis only
+        let newPositionX = gameState.player.position.clone();
+        newPositionX.x += movement.x;
+        const playerBoxX = new THREE.Box3().setFromCenterAndSize(
+            newPositionX,
             new THREE.Vector3(1, 2, 1)
         );
-
-        let canMove = true;
+        let canMoveX = true;
         for (const wall of gameState.wallColliders) {
-            if (playerBox.intersectsBox(wall)) {
-                canMove = false;
-                console.log('Collision detected!', wall); // Debug
+            if (playerBoxX.intersectsBox(wall)) {
+                canMoveX = false;
                 break;
             }
         }
-
-        // Update position if no collision
-        if (canMove) {
-            gameState.player.position.copy(newPosition);
-            camera.position.copy(newPosition);
+        // Try moving on Z axis only
+        let newPositionZ = gameState.player.position.clone();
+        newPositionZ.z += movement.z;
+        const playerBoxZ = new THREE.Box3().setFromCenterAndSize(
+            newPositionZ,
+            new THREE.Vector3(1, 2, 1)
+        );
+        let canMoveZ = true;
+        for (const wall of gameState.wallColliders) {
+            if (playerBoxZ.intersectsBox(wall)) {
+                canMoveZ = false;
+                break;
+            }
         }
+        // Apply movement if possible
+        if (canMoveX) {
+            gameState.player.position.x = newPositionX.x;
+        }
+        if (canMoveZ) {
+            gameState.player.position.z = newPositionZ.z;
+        }
+        // Always update camera position to match player
+        camera.position.copy(gameState.player.position);
     }
 }
 
