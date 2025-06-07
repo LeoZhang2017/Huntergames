@@ -672,6 +672,25 @@ function createArenaTerrain() {
     
     // Add decorative elements
     addArenaDecorations();
+    
+    // Create wall colliders for arena
+    gameState.wallColliders = []; // Clear existing colliders
+    
+    // Arena outer walls
+    const arenaWalls = [
+        { min: [-100, 0, -50], max: [100, 10, -49] },  // North wall
+        { min: [-100, 0, 49], max: [100, 10, 50] },    // South wall  
+        { min: [-100, 0, -50], max: [-99, 10, 50] },   // West wall
+        { min: [99, 0, -50], max: [100, 10, 50] }      // East wall
+    ];
+
+    arenaWalls.forEach(wall => {
+        const box = new THREE.Box3(
+            new THREE.Vector3(...wall.min),
+            new THREE.Vector3(...wall.max)
+        );
+        gameState.wallColliders.push(box);
+    });
 }
 
 // Create obstacles for the arena
@@ -1071,7 +1090,7 @@ function spawnWarehouseEnemies() {
 // Create a knife-wielding enemy
 function createKnifeEnemy(x, z, hasKnife = true) {
     // Create enemy body
-    const enemyGeometry = new THREE.CapsuleGeometry(0.5, 1.5, 8, 16);
+    const enemyGeometry = new THREE.CylinderGeometry(0.5, 0.5, 1.5, 8);
     const enemyMaterial = new THREE.MeshStandardMaterial({ 
         color: hasKnife ? 0x8B0000 : 0x4B0082 // Dark red for knife, dark blue for gun
     });
@@ -1306,7 +1325,7 @@ function spawnArenaEnemies() {
 // Create team-based enemy
 function createTeamEnemy(x, z, team) {
     // Create enemy body
-    const enemyGeometry = new THREE.CapsuleGeometry(0.5, 1.5, 8, 16);
+    const enemyGeometry = new THREE.CylinderGeometry(0.5, 0.5, 1.5, 8);
     const enemyMaterial = new THREE.MeshStandardMaterial({ 
         color: team === 'red' ? 0x8B0000 : 0x000080
     });
@@ -1872,8 +1891,8 @@ function constrainPlayerPosition() {
             gameState.player.position.z = Math.max(-49, Math.min(49, gameState.player.position.z));
             break;
         case STAGES.ARENA:
-            gameState.player.position.x = Math.max(-99, Math.min(99, gameState.player.position.x));
-            gameState.player.position.z = Math.max(-49, Math.min(49, gameState.player.position.z));
+            gameState.player.position.x = Math.max(-98, Math.min(98, gameState.player.position.x));
+            gameState.player.position.z = Math.max(-48, Math.min(48, gameState.player.position.z));
             break;
         case STAGES.FOREST:
             gameState.player.position.x = Math.max(-99, Math.min(99, gameState.player.position.x));
