@@ -1,0 +1,40 @@
+# The Hunter Games
+
+## Prologue
+In the year 2045, the world has become a playground for the ultra-wealthy. The Hunter Games, a brutal survival competition, has emerged as the ultimate form of entertainment for the elite. You are one of the many desperate souls who have volunteered to participate, hoping to win the massive prize pool and escape your life of poverty.
+
+## Stage 1: The Warehouse
+Your journey begins in an abandoned industrial warehouse. This is the proving ground where potential hunters are tested. You must navigate through the maze-like structure, gathering weapons and ammunition while avoiding deadly traps. The warehouse is filled with other contestants, all vying for the same resources. Your goal is to collect enough supplies and reach the exit door before time runs out. Only the strongest and most resourceful will advance to the next stage.
+
+## Stage 2: Reds or Blues
+Having proven your worth in the warehouse, you're now part of a team-based elimination round. The remaining contestants are divided into two factions: the Reds and the Blues. This stage takes place in a massive arena, where team tactics and combat skills are put to the test. You must eliminate the opposing team while protecting your own. The arena is filled with strategic cover points and high-value weapon caches. Only one team will survive to face the final challenge.
+
+## Stage 3: The Billionaire Hunter
+The final stage is the most dangerous of all. You and the other survivors are released into a vast forest preserve, but you're not alone. The forest is the hunting ground of a deranged billionaire who has paid for the privilege of hunting the contestants. Armed with advanced technology and an army of AI-controlled drones, the billionaire will stop at nothing to claim his prize. This is your chance to turn the tables and become the hunter instead of the hunted.
+
+## Epilogue
+The Hunter Games is more than just a competition - it's a reflection of a society where human life has become a commodity. As you fight for survival, you'll uncover the dark truth behind the games and the powerful figures who orchestrate them. Will you become another statistic in the Hunter Games, or will you defy the odds and become a legend?
+
+## Gameplay Elements
+- Multiple weapon types with different characteristics
+- Ammunition management and strategic resource gathering
+- Team-based combat in the arena stage
+- Stealth and survival mechanics in the forest
+- Environmental hazards and traps
+- Dynamic AI enemies with varying behaviors
+- Upgrade system between stages
+- Time-based challenges and objectives
+
+## World Building
+The game takes place in a dystopian future where wealth inequality has reached extreme levels. The Hunter Games serves as both entertainment for the rich and a potential escape for the poor. The three stages represent different aspects of this world:
+- The Warehouse: A symbol of industrial decay and desperation
+- The Arena: A showcase of organized violence and team dynamics
+- The Forest: The ultimate test of survival against overwhelming odds
+
+## Themes
+- Survival against all odds
+- The corrupting influence of wealth and power
+- The value of human life in a commodified society
+- Teamwork versus individual survival
+- The hunter becoming the hunted
+- Redemption and revenge

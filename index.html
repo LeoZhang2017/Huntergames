@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hunter Games 3D</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Three.js library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <div id="game-container">
+        <div id="ui-overlay">
+            <div id="stage-info">Stage: <span id="current-stage">The Warehouse</span></div>
+            <div id="player-stats">
+                <div id="health">Health: <span id="health-value">100</span></div>
+                <div id="coins">Coins: <span id="coins-value">0</span></div>
+                <div id="ammo">Ammo: <span id="ammo-value">0</span></div>
+            </div>
+            <div id="inventory-container">
+                <h3>Inventory</h3>
+                <div id="inventory"></div>
+            </div>
+            <div id="game-message"></div>
+            <button id="start-button">Start Game</button>
+            <div id="crosshair">+</div>
+        </div>
+    </div>
+    <script src="game.js"></script>
+</body>
+</html> 
