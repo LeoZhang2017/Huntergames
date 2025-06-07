@@ -1979,14 +1979,4 @@ window.addEventListener('load', () => {
     initGame();
     createTimerUI();
     animate();
-});
-
-// Add event listener for spacebar to start the game from the start screen
-window.addEventListener('keydown', function(e) {
-    // Only trigger if start screen is visible and spacebar is pressed
-    const startScreen = document.getElementById('start-screen');
-    if (startScreen && startScreen.style.display !== 'none' && (e.code === 'Space' || e.key === ' ')) {
-        e.preventDefault();
-        startButton.click();
-    }
 }); 
