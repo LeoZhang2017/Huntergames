@@ -54,7 +54,8 @@ const gameState = {
     doorStates: {}, // Track door states (open/closed)
     wallColliders: [], // Store wall collision boxes
     keys: {},
-    moveSpeed: 0.05
+    moveSpeed: 0.05,
+    bases: []
 };
 
 // THREE.js Variables
@@ -607,201 +608,85 @@ function createWarehouseTerrain() {
 
 // Create arena terrain
 function createArenaTerrain() {
-    // Create floor
-    const floorGeometry = new THREE.PlaneGeometry(200, 100);
-    const floorTexture = new THREE.TextureLoader().load('path/to/arena-floor.jpg');
-    floorTexture.wrapS = THREE.RepeatWrapping;
-    floorTexture.wrapT = THREE.RepeatWrapping;
-    floorTexture.repeat.set(10, 5);
-    
-    const floorMaterial = new THREE.MeshStandardMaterial({ 
-        color: 0xDDDDDD,
-        roughness: 0.8
+    // Create a large ground plane (5km x 5km)
+    const groundGeometry = new THREE.PlaneGeometry(5000, 5000);
+    const groundMaterial = new THREE.MeshStandardMaterial({
+        color: 0x404040,
+        roughness: 0.8,
+        metalness: 0.2
     });
+    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
     
-    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-    floor.rotation.x = -Math.PI / 2;
-    floor.receiveShadow = true;
-    terrainGroup.add(floor);
-    
-    // Create arena walls
-    const wallMaterial = new THREE.MeshStandardMaterial({ 
-        color: 0x888888, 
-        roughness: 0.7 
-    });
-    
-    // North wall
-    const northWallGeometry = new THREE.BoxGeometry(200, 10, 1);
-    const northWall = new THREE.Mesh(northWallGeometry, wallMaterial);
-    northWall.position.set(0, 5, -50);
-    northWall.castShadow = true;
-    terrainGroup.add(northWall);
-    
-    // South wall
-    const southWall = northWall.clone();
-    southWall.position.set(0, 5, 50);
-    terrainGroup.add(southWall);
-    
-    // East wall
-    const eastWallGeometry = new THREE.BoxGeometry(1, 10, 100);
-    const eastWall = new THREE.Mesh(eastWallGeometry, wallMaterial);
-    eastWall.position.set(100, 5, 0);
-    eastWall.castShadow = true;
-    terrainGroup.add(eastWall);
-    
-    // West wall
-    const westWall = eastWall.clone();
-    westWall.position.set(-100, 5, 0);
-    terrainGroup.add(westWall);
-    
-    // Create obstacles and cover in the middle of the arena
-    createArenaObstacles();
-    
-    // Add decorative elements
-    addArenaDecorations();
+    // Add terrain features
+    addTerrainFeatures();
 }
 
-// Create obstacles for the arena
-function createArenaObstacles() {
-    // Create concrete barriers
-    const barrierGeometry = new THREE.BoxGeometry(3, 1, 1);
-    const barrierMaterial = new THREE.MeshStandardMaterial({ 
-        color: 0xCCCCCC, 
-        roughness: 0.9 
-    });
+function addTerrainFeatures() {
+    // Add hills, rocks, and other terrain features
+    const features = [
+        { x: 2500, z: 2500, type: 'hill', size: 400 }, // Central hill
+        { x: 1500, z: 1500, type: 'rocks', size: 200 }, // Red side rocks
+        { x: 3500, z: 3500, type: 'rocks', size: 200 }, // Blue side rocks
+        // Add more features as needed
+    ];
     
-    // Create center obstacles
-    for (let i = -30; i <= 30; i += 15) {
-        const barrier = new THREE.Mesh(barrierGeometry, barrierMaterial);
-        barrier.position.set(i, 0.5, 0);
-        barrier.rotation.y = Math.PI / 4;
-        barrier.castShadow = true;
-        barrier.receiveShadow = true;
-        terrainGroup.add(barrier);
+    features.forEach(feature => {
+        if (feature.type === 'hill') {
+            createHill(feature.x, feature.z, feature.size);
+        } else if (feature.type === 'rocks') {
+            createRockFormation(feature.x, feature.z, feature.size);
+        }
+    });
+}
+
+function createHill(x, z, size) {
+    const geometry = new THREE.ConeGeometry(size, size * 0.3, 8);
+    const material = new THREE.MeshStandardMaterial({
+        color: 0x505050,
+        roughness: 0.9
+    });
+    const hill = new THREE.Mesh(geometry, material);
+    hill.position.set(x, size * 0.15, z);
+    hill.receiveShadow = true;
+    hill.castShadow = true;
+    scene.add(hill);
+}
+
+function createRockFormation(x, z, size) {
+    const rocks = [];
+    const rockCount = Math.floor(Math.random() * 5) + 3;
+    
+    for (let i = 0; i < rockCount; i++) {
+        const rockSize = size * (Math.random() * 0.3 + 0.2);
+        const geometry = new THREE.DodecahedronGeometry(rockSize, 1);
+        const material = new THREE.MeshStandardMaterial({
+            color: 0x606060,
+            roughness: 0.9
+        });
+        const rock = new THREE.Mesh(geometry, material);
+        
+        const angle = (i / rockCount) * Math.PI * 2;
+        const radius = size * 0.3;
+        rock.position.set(
+            x + Math.cos(angle) * radius,
+            rockSize,
+            z + Math.sin(angle) * radius
+        );
+        
+        rock.rotation.set(
+            Math.random() * Math.PI,
+            Math.random() * Math.PI,
+            Math.random() * Math.PI
+        );
+        
+        rock.receiveShadow = true;
+        rock.castShadow = true;
+        scene.add(rock);
+        rocks.push(rock);
     }
-    
-    // Create containers for cover
-    const containerGeometry = new THREE.BoxGeometry(5, 2.5, 2.5);
-    const containerMaterials = [
-        new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.8 }), // Brown
-        new THREE.MeshStandardMaterial({ color: 0x2E8B57, roughness: 0.8 }), // Green
-        new THREE.MeshStandardMaterial({ color: 0x4682B4, roughness: 0.8 })  // Blue
-    ];
-    
-    // Place containers in strategic positions
-    const containerPositions = [
-        { x: 0, z: 20, rotation: 0 },
-        { x: 0, z: -20, rotation: 0 },
-        { x: 30, z: 20, rotation: Math.PI / 4 },
-        { x: 30, z: -20, rotation: -Math.PI / 4 },
-        { x: -30, z: 20, rotation: -Math.PI / 4 },
-        { x: -30, z: -20, rotation: Math.PI / 4 },
-        { x: 60, z: 0, rotation: 0 },
-        { x: -60, z: 0, rotation: 0 }
-    ];
-    
-    containerPositions.forEach(pos => {
-        const material = containerMaterials[Math.floor(Math.random() * containerMaterials.length)];
-        const container = new THREE.Mesh(containerGeometry, material);
-        container.position.set(pos.x, 1.25, pos.z);
-        container.rotation.y = pos.rotation;
-        container.castShadow = true;
-        container.receiveShadow = true;
-        terrainGroup.add(container);
-    });
-    
-    // Create bunkers
-    const bunkerPositions = [
-        { x: 50, z: 25 },
-        { x: -50, z: 25 },
-        { x: 50, z: -25 },
-        { x: -50, z: -25 }
-    ];
-    
-    bunkerPositions.forEach(pos => {
-        createBunker(pos.x, pos.z);
-    });
-}
-
-// Create a bunker at given position
-function createBunker(x, z) {
-    const baseGeometry = new THREE.CylinderGeometry(4, 4, 1, 8);
-    const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x555555 });
-    const base = new THREE.Mesh(baseGeometry, baseMaterial);
-    base.position.set(x, 0.5, z);
-    terrainGroup.add(base);
-    
-    const wallGeometry = new THREE.CylinderGeometry(4, 4, 1.5, 8, 1, false, 0, Math.PI * 1.5);
-    const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x777777 });
-    const wall = new THREE.Mesh(wallGeometry, wallMaterial);
-    wall.position.set(x, 1.75, z);
-    wall.rotation.y = Math.random() * Math.PI * 2; // Random orientation
-    terrainGroup.add(wall);
-}
-
-// Add decorative elements to the arena
-function addArenaDecorations() {
-    // Add spotlights around the arena
-    const spotlightPositions = [
-        { x: 90, z: 40 },
-        { x: -90, z: 40 },
-        { x: 90, z: -40 },
-        { x: -90, z: -40 }
-    ];
-    
-    spotlightPositions.forEach(pos => {
-        // Create spotlight post
-        const postGeometry = new THREE.CylinderGeometry(0.5, 0.5, 8, 8);
-        const postMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
-        const post = new THREE.Mesh(postGeometry, postMaterial);
-        post.position.set(pos.x, 4, pos.z);
-        terrainGroup.add(post);
-        
-        // Create spotlight head
-        const headGeometry = new THREE.ConeGeometry(1, 2, 16);
-        const headMaterial = new THREE.MeshStandardMaterial({ color: 0x555555 });
-        const head = new THREE.Mesh(headGeometry, headMaterial);
-        head.rotation.x = Math.PI / 2;
-        head.position.y = 4;
-        
-        // Rotate toward center
-        const angle = Math.atan2(-pos.z, -pos.x);
-        head.rotation.z = angle;
-        post.add(head);
-        
-        // Add actual light
-        const spotlight = new THREE.SpotLight(0xffffff, 1);
-        spotlight.position.set(0, 4, 0);
-        spotlight.target.position.set(-pos.x, 0, -pos.z);
-        spotlight.angle = Math.PI / 8;
-        spotlight.penumbra = 0.2;
-        spotlight.distance = 150;
-        spotlight.castShadow = true;
-        post.add(spotlight);
-        post.add(spotlight.target);
-    });
-    
-    // Add arena ground markings
-    const markingsGeometry = new THREE.RingGeometry(10, 10.5, 32);
-    const markingsMaterial = new THREE.MeshBasicMaterial({ 
-        color: 0xffffff,
-        side: THREE.DoubleSide
-    });
-    const centerRing = new THREE.Mesh(markingsGeometry, markingsMaterial);
-    centerRing.rotation.x = -Math.PI / 2;
-    centerRing.position.y = 0.01; // Just above ground
-    terrainGroup.add(centerRing);
-    
-    // Add middle line
-    const lineGeometry = new THREE.PlaneGeometry(180, 1);
-    const lineMaterial = new THREE.MeshBasicMaterial({ 
-        color: 0xffffff,
-        side: THREE.DoubleSide
-    });
-    const middleLine = new THREE.Mesh(lineGeometry, lineMaterial);
-    middleLine.rotation.x = -Math.PI / 2;
-    middleLine.position.y = 0.01;
-    terrainGroup.add(middleLine);
 }
 
 // Spawn items in the warehouse stage
@@ -2130,18 +2015,42 @@ function spawnArenaEnemies() {
     // Clear existing enemies
     gameState.enemies = [];
     
-    // Spawn red team enemies
+    // Red team base locations
+    const redBases = [
+        { x: 500, z: 500 },    // Main Base
+        { x: 1500, z: 1000 },  // Forward Base 1
+        { x: 1000, z: 1500 },  // Forward Base 2
+        { x: 2000, z: 2000 },  // Central Base 1
+        { x: 1500, z: 2500 }   // Support Base 1
+    ];
+    
+    // Blue team base locations
+    const blueBases = [
+        { x: 4500, z: 4500 },  // Main Base
+        { x: 3500, z: 4000 },  // Forward Base 1
+        { x: 4000, z: 3500 },  // Forward Base 2
+        { x: 3000, z: 3000 },  // Central Base 1
+        { x: 3500, z: 2500 }   // Support Base 1
+    ];
+    
+    // Spawn red team
     for (let i = 0; i < ENEMIES_PER_TEAM; i++) {
-        const x = -2000 + Math.random() * 1000; // Red team side
-        const z = -2500 + Math.random() * 5000; // Full field width
-        spawnEnemy('red', x, z);
+        const base = redBases[Math.floor(Math.random() * redBases.length)];
+        const offset = {
+            x: (Math.random() - 0.5) * 200,
+            z: (Math.random() - 0.5) * 200
+        };
+        spawnEnemy('red', base.x + offset.x, base.z + offset.z);
     }
     
-    // Spawn blue team enemies
+    // Spawn blue team
     for (let i = 0; i < ENEMIES_PER_TEAM; i++) {
-        const x = 1000 + Math.random() * 1000; // Blue team side
-        const z = -2500 + Math.random() * 5000; // Full field width
-        spawnEnemy('blue', x, z);
+        const base = blueBases[Math.floor(Math.random() * blueBases.length)];
+        const offset = {
+            x: (Math.random() - 0.5) * 200,
+            z: (Math.random() - 0.5) * 200
+        };
+        spawnEnemy('blue', base.x + offset.x, base.z + offset.z);
     }
 }
 
@@ -2176,19 +2085,48 @@ function createEnemyMesh(team) {
 }
 
 function setupTeamBases() {
-    // Red team base
-    createBase(-2000, 0, 'red');
+    // Red team bases
+    const redBases = [
+        { x: 500, z: 500, type: 'main' },
+        { x: 1500, z: 1000, type: 'forward' },
+        { x: 1000, z: 1500, type: 'forward' },
+        { x: 2000, z: 2000, type: 'central' },
+        { x: 1500, z: 2500, type: 'support' }
+    ];
     
-    // Blue team base
-    createBase(2000, 0, 'blue');
+    // Blue team bases
+    const blueBases = [
+        { x: 4500, z: 4500, type: 'main' },
+        { x: 3500, z: 4000, type: 'forward' },
+        { x: 4000, z: 3500, type: 'forward' },
+        { x: 3000, z: 3000, type: 'central' },
+        { x: 3500, z: 2500, type: 'support' }
+    ];
+    
+    // Create all bases
+    redBases.forEach(base => createBase(base.x, base.z, 'red', base.type));
+    blueBases.forEach(base => createBase(base.x, base.z, 'blue', base.type));
+    
+    // Set player spawn position based on team
+    const team = gameState.player.team;
+    const spawnBase = team === 'red' ? redBases[0] : blueBases[0]; // Spawn at main base
+    gameState.player.position.set(spawnBase.x, 1, spawnBase.z);
+    camera.position.copy(gameState.player.position);
+    camera.position.y = 1.6; // Eye level
 }
 
-function createBase(x, z, team) {
-    const baseSize = 200;
-    const baseHeight = 50;
+function createBase(x, z, team, type) {
+    const baseConfig = {
+        main: { size: 300, height: 80 },
+        forward: { size: 200, height: 60 },
+        central: { size: 250, height: 70 },
+        support: { size: 180, height: 50 }
+    };
+    
+    const config = baseConfig[type];
     
     // Create base structure
-    const baseGeometry = new THREE.BoxGeometry(baseSize, baseHeight, baseSize);
+    const baseGeometry = new THREE.BoxGeometry(config.size, config.height, config.size);
     const baseMaterial = new THREE.MeshPhongMaterial({
         color: team === 'red' ? 0xff0000 : 0x0000ff,
         opacity: 0.5,
@@ -2196,16 +2134,27 @@ function createBase(x, z, team) {
     });
     
     const baseMesh = new THREE.Mesh(baseGeometry, baseMaterial);
-    baseMesh.position.set(x, baseHeight / 2, z);
+    baseMesh.position.set(x, config.height / 2, z);
     baseMesh.receiveShadow = true;
+    baseMesh.castShadow = true;
     
     scene.add(baseMesh);
     
     // Add defensive structures
-    addDefensiveStructures(x, z, team);
+    addDefensiveStructures(x, z, team, type);
+    
+    // Store base in gameState
+    if (!gameState.bases) gameState.bases = [];
+    gameState.bases.push({
+        team: team,
+        type: type,
+        position: { x, z },
+        health: 10000, // From config
+        mesh: baseMesh
+    });
 }
 
-function addDefensiveStructures(baseX, baseZ, team) {
+function addDefensiveStructures(baseX, baseZ, team, type) {
     const structures = [
         { x: -50, z: -50 },
         { x: 50, z: -50 },
