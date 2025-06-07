@@ -1974,6 +1974,119 @@ function interactWithDoor(doorIndex) {
     animateDoor();
 }
 
+// Set up Stage 2: Arena (Reds or Blues)
+function setupArena() {
+    // Assign player to a team randomly (red or blue)
+    const teams = ['red', 'blue'];
+    gameState.player.team = teams[Math.floor(Math.random() * teams.length)];
+
+    // Set player spawn position based on team
+    if (gameState.player.team === 'red') {
+        gameState.player.position.set(-80, 1, 0);
+    } else {
+        gameState.player.position.set(80, 1, 0);
+    }
+    camera.position.copy(gameState.player.position);
+    camera.position.y = 1.6;
+
+    // Spawn AI enemies for both teams
+    // For demo: 4 per team, spread out
+    const enemyConfigs = [
+        { team: 'red', x: -80, z: -20 },
+        { team: 'red', x: -80, z: 20 },
+        { team: 'red', x: -60, z: -30 },
+        { team: 'red', x: -60, z: 30 },
+        { team: 'blue', x: 80, z: -20 },
+        { team: 'blue', x: 80, z: 20 },
+        { team: 'blue', x: 60, z: -30 },
+        { team: 'blue', x: 60, z: 30 }
+    ];
+    enemyConfigs.forEach((cfg, idx) => {
+        const enemy = {
+            id: `arena_enemy_${idx}`,
+            health: 100,
+            team: cfg.team,
+            position: new THREE.Vector3(cfg.x, 1, cfg.z),
+            mesh: null,
+            alive: true
+        };
+        // Simple enemy mesh (colored box)
+        const color = cfg.team === 'red' ? 0xff3333 : 0x3333ff;
+        const enemyMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(1, 2, 1),
+            new THREE.MeshStandardMaterial({ color })
+        );
+        enemyMesh.position.copy(enemy.position);
+        enemyMesh.castShadow = true;
+        enemiesGroup.add(enemyMesh);
+        enemy.mesh = enemyMesh;
+        gameState.enemies.push(enemy);
+    });
+
+    // Place weapons and ammo in the arena (reuse warehouse logic for now)
+    spawnArenaItems();
+
+    // Set up UI
+    gameMessageElement.textContent = `You are on the ${gameState.player.team.toUpperCase()} team. Eliminate the enemy team!`;
+    updateUI();
+
+    // Set up victory condition: check if all enemies of the other team are dead
+    gameState.stageCompleted = false;
+}
+
+// Spawn items in the arena stage
+function spawnArenaItems() {
+    // Place weapons in the center and at each team's side
+    const weaponPositions = [
+        { x: 0, z: 0 },
+        { x: -60, z: 0 },
+        { x: 60, z: 0 },
+        { x: 0, z: 30 },
+        { x: 0, z: -30 }
+    ];
+    const weaponKeys = Object.keys(WEAPONS);
+    for (let i = 0; i < weaponPositions.length; i++) {
+        const weaponType = weaponKeys[i % weaponKeys.length];
+        const weapon = WEAPONS[weaponType];
+        const pos = weaponPositions[i];
+        const weaponGeometry = new THREE.BoxGeometry(1, 0.2, 0.5);
+        const weaponMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+        const weaponMesh = new THREE.Mesh(weaponGeometry, weaponMaterial);
+        weaponMesh.position.set(pos.x, 0.5, pos.z);
+        weaponMesh.rotation.y = Math.random() * Math.PI * 2;
+        weaponMesh.castShadow = true;
+        itemsGroup.add(weaponMesh);
+        gameState.items.push({
+            type: 'weapon',
+            weapon: weapon,
+            position: new THREE.Vector3(pos.x, 0.5, pos.z),
+            mesh: weaponMesh
+        });
+    }
+    // Place ammo pickups
+    const ammoPositions = [
+        { x: -40, z: 0 },
+        { x: 40, z: 0 },
+        { x: 0, z: 40 },
+        { x: 0, z: -40 }
+    ];
+    const ammoType = ITEMS.AMMO_RIFLE;
+    ammoPositions.forEach(pos => {
+        const ammoGeometry = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+        const ammoMaterial = new THREE.MeshStandardMaterial({ color: 0x0000ff });
+        const ammoMesh = new THREE.Mesh(ammoGeometry, ammoMaterial);
+        ammoMesh.position.set(pos.x, 0.5, pos.z);
+        ammoMesh.castShadow = true;
+        itemsGroup.add(ammoMesh);
+        gameState.items.push({
+            type: 'ammo',
+            ammo: ammoType.type,
+            position: new THREE.Vector3(pos.x, 0.5, pos.z),
+            mesh: ammoMesh
+        });
+    });
+}
+
 // Initialize the game when the page loads
 window.addEventListener('load', () => {
     initGame();
