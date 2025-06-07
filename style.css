@@ -110,12 +110,6 @@ body {
     z-index: 1000;
 }
 
-#start-screen h1 {
-    font-size: 4em;
-    margin-bottom: 20px;
-    text-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
-}
-
 #start-button {
     padding: 15px 30px;
     font-size: 1.5em;
