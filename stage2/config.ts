@@ -3,7 +3,7 @@ import { ResourceType } from './Resource';
 
 // Game duration constants
 export const STAGE_ONE_DURATION = 60;  // 1 minute in seconds
-export const STAGE_TWO_DURATION = 600; // 10 minutes in seconds
+export const STAGE_TWO_DURATION = 300; // Changed from 600 to 300 seconds (5 minutes)
 
 export const DEFAULT_GAME_CONFIG: GameConfig = {
     mapSize: {
