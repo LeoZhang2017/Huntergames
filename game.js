@@ -1355,34 +1355,102 @@ function constrainPlayerPosition() {
 // Update enemies
 function updateEnemies(delta) {
     gameState.enemies.forEach(enemy => {
-        // Simple AI: move towards player if far away
-        const distanceToPlayer = enemy.position.distanceTo(gameState.player.position);
+        if (!enemy.mesh) return;
         
-        if (distanceToPlayer > 20) {
-            // Move towards player
-            const direction = new THREE.Vector3()
-                .subVectors(gameState.player.position, enemy.position)
-                .normalize();
-            
-            // Keep on xz plane
-            direction.y = 0;
-            
-            // Apply movement
-            enemy.position.add(direction.multiplyScalar(enemy.speed));
-            
-            // Update mesh position
-            enemy.mesh.position.copy(enemy.position);
-            
-            // Update rotation to face player
-            enemy.mesh.lookAt(gameState.player.position);
-        } else if (distanceToPlayer > 10) {
-            // Close enough to shoot but not too close
-            // Shooting logic would be implemented here
-            
-            // Just face the player
-            enemy.mesh.lookAt(gameState.player.position);
+        // Update enemy AI
+        updateEnemyAI(enemy, delta);
+        
+        // Update enemy position
+        enemy.mesh.position.copy(enemy.position);
+        
+        // Check if enemy is dead
+        if (enemy.health <= 0) {
+            scene.remove(enemy.mesh);
+            const index = gameState.enemies.indexOf(enemy);
+            if (index > -1) {
+                gameState.enemies.splice(index, 1);
+            }
         }
     });
+}
+
+function updateEnemyAI(enemy, delta) {
+    const MOVEMENT_SPEED = 2;
+    const ATTACK_RANGE = 20;
+    const SIGHT_RANGE = 50;
+    
+    // Find nearest target
+    let target = null;
+    let nearestDistance = Infinity;
+    
+    // Check player as potential target
+    if (gameState.player.team !== enemy.team) {
+        const distToPlayer = enemy.position.distanceTo(gameState.player.position);
+        if (distToPlayer < SIGHT_RANGE) {
+            target = gameState.player;
+            nearestDistance = distToPlayer;
+        }
+    }
+    
+    // Check other enemies as potential targets
+    gameState.enemies.forEach(otherEnemy => {
+        if (otherEnemy.team !== enemy.team) {
+            const dist = enemy.position.distanceTo(otherEnemy.position);
+            if (dist < nearestDistance && dist < SIGHT_RANGE) {
+                target = otherEnemy;
+                nearestDistance = dist;
+            }
+        }
+    });
+    
+    // Update enemy behavior based on target
+    if (target) {
+        enemy.state = 'attacking';
+        enemy.target = target;
+        
+        // Move towards target if not in attack range
+        if (nearestDistance > ATTACK_RANGE) {
+            const direction = new THREE.Vector3()
+                .subVectors(target.position, enemy.position)
+                .normalize();
+            enemy.position.add(direction.multiplyScalar(MOVEMENT_SPEED * delta));
+        }
+        
+        // Attack if in range and cooldown is ready
+        if (nearestDistance <= ATTACK_RANGE && Date.now() - enemy.lastAttackTime > enemy.attackCooldown) {
+            attackTarget(enemy, target);
+        }
+    } else {
+        // Patrol behavior when no target
+        enemy.state = 'patrolling';
+        patrol(enemy, delta);
+    }
+}
+
+function attackTarget(enemy, target) {
+    const damage = 10;
+    if (target === gameState.player) {
+        gameState.player.health -= damage;
+        showDamageIndicator();
+    } else {
+        target.health -= damage;
+    }
+    enemy.lastAttackTime = Date.now();
+}
+
+function patrol(enemy, delta) {
+    // Simple patrol behavior - move in a pattern
+    const time = Date.now() * 0.001;
+    const radius = 50;
+    const baseX = enemy.team === 'red' ? -2000 : 2000;
+    
+    enemy.position.x = baseX + Math.cos(time) * radius;
+    enemy.position.z = Math.sin(time) * radius;
+}
+
+function showTeamAssignment(team) {
+    const message = `You have been assigned to the ${team.toUpperCase()} team!`;
+    showPickupMessage(message, false);
 }
 
 // Check if stage is completed
@@ -2032,62 +2100,122 @@ function interactWithDoor(doorIndex) {
 
 // Set up Stage 2: Arena (Reds or Blues)
 function setupArena() {
-    // Assign player to a team randomly (red or blue)
-    const teams = ['red', 'blue'];
-    gameState.player.team = teams[Math.floor(Math.random() * teams.length)];
-
-    // Set player spawn position based on team
-    if (gameState.player.team === 'red') {
-        gameState.player.position.set(-80, 1, 0);
-    } else {
-        gameState.player.position.set(80, 1, 0);
-    }
-    camera.position.copy(gameState.player.position);
-    camera.position.y = 1.6;
-
-    // Spawn AI enemies for both teams
-    // For demo: 4 per team, spread out
-    const enemyConfigs = [
-        { team: 'red', x: -80, z: -20 },
-        { team: 'red', x: -80, z: 20 },
-        { team: 'red', x: -60, z: -30 },
-        { team: 'red', x: -60, z: 30 },
-        { team: 'blue', x: 80, z: -20 },
-        { team: 'blue', x: 80, z: 20 },
-        { team: 'blue', x: 60, z: -30 },
-        { team: 'blue', x: 60, z: 30 }
-    ];
-    enemyConfigs.forEach((cfg, idx) => {
-        const enemy = {
-            id: `arena_enemy_${idx}`,
-            health: 100,
-            team: cfg.team,
-            position: new THREE.Vector3(cfg.x, 1, cfg.z),
-            mesh: null,
-            alive: true
-        };
-        // Simple enemy mesh (colored box)
-        const color = cfg.team === 'red' ? 0xff3333 : 0x3333ff;
-        const enemyMesh = new THREE.Mesh(
-            new THREE.BoxGeometry(1, 2, 1),
-            new THREE.MeshStandardMaterial({ color })
-        );
-        enemyMesh.position.copy(enemy.position);
-        enemyMesh.castShadow = true;
-        enemiesGroup.add(enemyMesh);
-        enemy.mesh = enemyMesh;
-        gameState.enemies.push(enemy);
-    });
-
-    // Place weapons and ammo in the arena (reuse warehouse logic for now)
+    // Clear previous stage
+    clearStage();
+    
+    // Create arena terrain and obstacles
+    createArenaTerrain();
+    createArenaObstacles();
+    addArenaDecorations();
+    
+    // Set up team bases
+    setupTeamBases();
+    
+    // Spawn initial enemies
+    spawnArenaEnemies();
+    
+    // Spawn items and resources
     spawnArenaItems();
+    
+    // Set player team randomly
+    gameState.player.team = Math.random() < 0.5 ? 'red' : 'blue';
+    
+    // Update UI to show team assignment
+    showTeamAssignment(gameState.player.team);
+}
 
-    // Set up UI
-    gameMessageElement.textContent = `You are on the ${gameState.player.team.toUpperCase()} team. Eliminate the enemy team!`;
-    updateUI();
+function spawnArenaEnemies() {
+    const ENEMIES_PER_TEAM = 25; // 25 enemies per team for 50v50
+    
+    // Clear existing enemies
+    gameState.enemies = [];
+    
+    // Spawn red team enemies
+    for (let i = 0; i < ENEMIES_PER_TEAM; i++) {
+        const x = -2000 + Math.random() * 1000; // Red team side
+        const z = -2500 + Math.random() * 5000; // Full field width
+        spawnEnemy('red', x, z);
+    }
+    
+    // Spawn blue team enemies
+    for (let i = 0; i < ENEMIES_PER_TEAM; i++) {
+        const x = 1000 + Math.random() * 1000; // Blue team side
+        const z = -2500 + Math.random() * 5000; // Full field width
+        spawnEnemy('blue', x, z);
+    }
+}
 
-    // Set up victory condition: check if all enemies of the other team are dead
-    gameState.stageCompleted = false;
+function spawnEnemy(team, x, z) {
+    const enemy = {
+        position: new THREE.Vector3(x, 1, z),
+        health: 100,
+        team: team,
+        weapon: getRandomWeapon(),
+        state: 'patrolling', // patrolling, attacking, defending
+        target: null,
+        lastAttackTime: 0,
+        attackCooldown: 1000, // 1 second between attacks
+        mesh: createEnemyMesh(team)
+    };
+    
+    gameState.enemies.push(enemy);
+    scene.add(enemy.mesh);
+}
+
+function createEnemyMesh(team) {
+    const geometry = new THREE.BoxGeometry(1, 2, 1);
+    const material = new THREE.MeshPhongMaterial({
+        color: team === 'red' ? 0xff0000 : 0x0000ff,
+        opacity: 0.8,
+        transparent: true
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    return mesh;
+}
+
+function setupTeamBases() {
+    // Red team base
+    createBase(-2000, 0, 'red');
+    
+    // Blue team base
+    createBase(2000, 0, 'blue');
+}
+
+function createBase(x, z, team) {
+    const baseSize = 200;
+    const baseHeight = 50;
+    
+    // Create base structure
+    const baseGeometry = new THREE.BoxGeometry(baseSize, baseHeight, baseSize);
+    const baseMaterial = new THREE.MeshPhongMaterial({
+        color: team === 'red' ? 0xff0000 : 0x0000ff,
+        opacity: 0.5,
+        transparent: true
+    });
+    
+    const baseMesh = new THREE.Mesh(baseGeometry, baseMaterial);
+    baseMesh.position.set(x, baseHeight / 2, z);
+    baseMesh.receiveShadow = true;
+    
+    scene.add(baseMesh);
+    
+    // Add defensive structures
+    addDefensiveStructures(x, z, team);
+}
+
+function addDefensiveStructures(baseX, baseZ, team) {
+    const structures = [
+        { x: -50, z: -50 },
+        { x: 50, z: -50 },
+        { x: -50, z: 50 },
+        { x: 50, z: 50 }
+    ];
+    
+    structures.forEach(pos => {
+        createBunker(baseX + pos.x, baseZ + pos.z);
+    });
 }
 
 // Spawn items in the arena stage
