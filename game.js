@@ -325,7 +325,7 @@ function resetGameState() {
         health: 100,
         coins: 0,
         inventory: [],
-        position: new THREE.Vector3(0, 1, 0),
+        position: new THREE.Vector3(0, 2, 0), // Increased height from 1 to 2
         rotation: new THREE.Euler(0, 0, 0),
         team: null,
         kills: 0,
@@ -333,7 +333,8 @@ function resetGameState() {
         weapon: null,
         currentWeaponIndex: -1,
         isReloading: false,
-        reloadTime: 0
+        reloadTime: 0,
+        mesh: null // Will hold the player's visual body
     };
     gameState.enemies = [];
     gameState.items = [];
@@ -343,9 +344,12 @@ function resetGameState() {
     gameState.enemySpawnTimer = 60; // Spawn enemies after 60 seconds
     gameState.enemySpawned = false;
     
-    // Reset camera position
-    camera.position.set(0, 1.6, 0);
+    // Reset camera position (increased height)
+    camera.position.set(0, 2.2, 0); // Increased from 1.6 to 2.2 to match taller player
     camera.rotation.set(0, 0, 0);
+    
+    // Create player body mesh
+    createPlayerBody();
     
     // Set up the appropriate stage
     setupStage(gameState.currentStage);
@@ -398,6 +402,98 @@ function clearStage() {
     gameState.enemies = [];
     gameState.items = [];
     gameState.wallColliders = []; // Clear collision boxes
+    
+    // Remove existing player mesh if it exists
+    if (gameState.player && gameState.player.mesh) {
+        scene.remove(gameState.player.mesh);
+        gameState.player.mesh = null;
+    }
+}
+
+// Create the player's visual body
+function createPlayerBody() {
+    // Remove existing player mesh if it exists
+    if (gameState.player.mesh) {
+        scene.remove(gameState.player.mesh);
+    }
+    
+    // Create player body (taller cylinder)
+    const playerGeometry = new THREE.CylinderGeometry(0.4, 0.4, 1.8, 8); // Increased height from 1.5 to 1.8
+    const playerMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x4169E1, // Royal blue color for the player
+        roughness: 0.7,
+        metalness: 0.1
+    });
+    const playerMesh = new THREE.Mesh(playerGeometry, playerMaterial);
+    
+    // Position the body below the camera (feet on ground)
+    playerMesh.position.copy(gameState.player.position);
+    playerMesh.position.y = 0.9; // Position feet on ground level (body height 1.8 / 2 = 0.9)
+    playerMesh.castShadow = true;
+    playerMesh.receiveShadow = true;
+    
+    // Add a head
+    const headGeometry = new THREE.SphereGeometry(0.25, 8, 8);
+    const headMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0xFFDBB5, // Skin color
+        roughness: 0.8
+    });
+    const head = new THREE.Mesh(headGeometry, headMaterial);
+    head.position.y = 1.1; // Position on top of body
+    head.castShadow = true;
+    playerMesh.add(head);
+    
+    // Add arms
+    const armGeometry = new THREE.CylinderGeometry(0.08, 0.08, 0.6, 6);
+    const armMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x4169E1,
+        roughness: 0.7
+    });
+    
+    const leftArm = new THREE.Mesh(armGeometry, armMaterial);
+    leftArm.position.set(-0.5, 0.3, 0);
+    leftArm.rotation.z = Math.PI / 6; // Slight angle
+    leftArm.castShadow = true;
+    playerMesh.add(leftArm);
+    
+    const rightArm = new THREE.Mesh(armGeometry, armMaterial);
+    rightArm.position.set(0.5, 0.3, 0);
+    rightArm.rotation.z = -Math.PI / 6; // Slight angle
+    rightArm.castShadow = true;
+    playerMesh.add(rightArm);
+    
+    // Add legs
+    const legGeometry = new THREE.CylinderGeometry(0.1, 0.1, 0.8, 6);
+    const legMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x2F4F4F, // Dark slate gray for pants
+        roughness: 0.8
+    });
+    
+    const leftLeg = new THREE.Mesh(legGeometry, legMaterial);
+    leftLeg.position.set(-0.2, -1.3, 0);
+    leftLeg.castShadow = true;
+    playerMesh.add(leftLeg);
+    
+    const rightLeg = new THREE.Mesh(legGeometry, legMaterial);
+    rightLeg.position.set(0.2, -1.3, 0);
+    rightLeg.castShadow = true;
+    playerMesh.add(rightLeg);
+    
+    // Create a shadow plane beneath the player
+    const shadowGeometry = new THREE.CircleGeometry(0.8, 16);
+    const shadowMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0x000000,
+        transparent: true,
+        opacity: 0.3
+    });
+    const shadow = new THREE.Mesh(shadowGeometry, shadowMaterial);
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.y = -0.89; // Just above the ground
+    playerMesh.add(shadow);
+    
+    // Store the mesh
+    gameState.player.mesh = playerMesh;
+    scene.add(playerMesh);
 }
 
 // Create terrain based on current stage
@@ -957,38 +1053,93 @@ function addArenaDecorations() {
 
 // Spawn items in the warehouse stage
 function spawnWarehouseItems() {
-    // Create more weapon placement zones (scattered throughout warehouse)
-    const weaponZones = [
-        { x: -35, z: -35, radius: 8 }, // Top left
-        { x: 35, z: -35, radius: 8 },  // Top right
-        { x: -35, z: 35, radius: 8 },  // Bottom left
-        { x: 35, z: 35, radius: 8 },   // Bottom right
-        { x: 0, z: -35, radius: 6 },   // Top center
-        { x: 0, z: 35, radius: 6 },    // Bottom center
-        { x: -35, z: 0, radius: 6 },   // Left center
-        { x: 35, z: 0, radius: 6 },    // Right center
-        { x: -15, z: -15, radius: 5 }, // Inner zones
-        { x: 15, z: -15, radius: 5 },
-        { x: -15, z: 15, radius: 5 },
-        { x: 15, z: 15, radius: 5 }
+    // Track used positions to prevent overlapping spawns
+    const usedPositions = [];
+    const MIN_DISTANCE = 6; // Minimum distance between weapons
+    
+    // Create strategic weapon spawn locations throughout the warehouse
+    const weaponSpawnLocations = [
+        // Corner positions
+        { x: -40, z: -40 }, { x: -30, z: -40 }, { x: -20, z: -40 },
+        { x: 20, z: -40 }, { x: 30, z: -40 }, { x: 40, z: -40 },
+        { x: -40, z: 40 }, { x: -30, z: 40 }, { x: -20, z: 40 },
+        { x: 20, z: 40 }, { x: 30, z: 40 }, { x: 40, z: 40 },
+        
+        // Side positions
+        { x: -40, z: -20 }, { x: -40, z: 0 }, { x: -40, z: 20 },
+        { x: 40, z: -20 }, { x: 40, z: 0 }, { x: 40, z: 20 },
+        
+        // Interior positions (avoiding center spawn area)
+        { x: -25, z: -25 }, { x: 25, z: -25 },
+        { x: -25, z: 25 }, { x: 25, z: 25 },
+        { x: -30, z: 0 }, { x: 30, z: 0 },
+        { x: 0, z: -30 }, { x: 0, z: 30 },
+        
+        // Additional scattered positions
+        { x: -35, z: -15 }, { x: 35, z: -15 },
+        { x: -35, z: 15 }, { x: 35, z: 15 },
+        { x: -15, z: -35 }, { x: 15, z: -35 },
+        { x: -15, z: 35 }, { x: 15, z: 35 }
     ];
+    
+    function isPositionValid(x, z) {
+        // Check distance from all used positions
+        for (const pos of usedPositions) {
+            const distance = Math.sqrt((x - pos.x) ** 2 + (z - pos.z) ** 2);
+            if (distance < MIN_DISTANCE) return false;
+        }
+        
+        // Make sure within warehouse bounds and not in center spawn area
+        if (Math.abs(x) > 48 || Math.abs(z) > 48) return false;
+        if (Math.abs(x) < 8 && Math.abs(z) < 8) return false; // Avoid center spawn
+        
+        return true;
+    }
+    
+    function findValidPosition(preferredLocations) {
+        // Try preferred locations first
+        for (const loc of preferredLocations) {
+            // Add random offset to make spawns less predictable
+            const offsetX = loc.x + (Math.random() - 0.5) * 6;
+            const offsetZ = loc.z + (Math.random() - 0.5) * 6;
+            
+            if (isPositionValid(offsetX, offsetZ)) {
+                return { x: offsetX, z: offsetZ };
+            }
+        }
+        
+        // If no preferred location works, try completely random positions
+        for (let attempt = 0; attempt < 100; attempt++) {
+            const x = (Math.random() - 0.5) * 90;
+            const z = (Math.random() - 0.5) * 90;
+            
+            if (isPositionValid(x, z)) {
+                return { x, z };
+            }
+        }
+        
+        // Last resort: just use first available from preferred locations
+        return preferredLocations[0];
+    }
     
     // Spawn multiple instances of each weapon type
     const weaponKeys = Object.keys(WEAPONS);
-    let weaponCount = 0;
     
     // Create 3 instances of each weapon scattered around
     for (let weaponInstance = 0; weaponInstance < 3; weaponInstance++) {
-        for (let i = 0; i < weaponKeys.length; i++) {
-            const weaponType = weaponKeys[i];
-            const weapon = WEAPONS[weaponType];
-            
-            // Select zone for this weapon (cycle through zones)
-            const zone = weaponZones[weaponCount % weaponZones.length];
-            weaponCount++;
+    for (let i = 0; i < weaponKeys.length; i++) {
+        const weaponType = weaponKeys[i];
+        const weapon = WEAPONS[weaponType];
+        
+            // Shuffle spawn locations for this weapon instance
+            const shuffledLocations = [...weaponSpawnLocations].sort(() => Math.random() - 0.5);
+            const position = findValidPosition(shuffledLocations);
+        
+            // Mark position as used
+            usedPositions.push(position);
             
             // Create a weapon model with different colors for different types
-            const weaponGeometry = new THREE.BoxGeometry(1, 0.2, 0.5);
+        const weaponGeometry = new THREE.BoxGeometry(1, 0.2, 0.5);
             let weaponColor;
             switch(weapon.model) {
                 case 'launcher': weaponColor = 0x444444; break;
@@ -1001,57 +1152,42 @@ function spawnWarehouseItems() {
             }
             
             const weaponMaterial = new THREE.MeshStandardMaterial({ color: weaponColor });
-            const weaponMesh = new THREE.Mesh(weaponGeometry, weaponMaterial);
-            
-            // Position within zone (random point within circle)
-            let x, z;
-            let attempts = 0;
-            do {
-                const angle = Math.random() * Math.PI * 2;
-                const distance = Math.random() * zone.radius;
-                x = zone.x + Math.cos(angle) * distance;
-                z = zone.z + Math.sin(angle) * distance;
-                attempts++;
-                
-                // Make sure weapon is not too close to walls or in blocked areas
-                if (Math.abs(x) < 48 && Math.abs(z) < 48) break;
-                
-            } while (attempts < 10);
-            
-            weaponMesh.position.set(x, 0.5, z);
-            weaponMesh.rotation.y = Math.random() * Math.PI * 2;
-            weaponMesh.castShadow = true;
-            
-            // Add floating animation
-            const floatHeight = 0.5 + Math.random() * 0.2;
-            const floatSpeed = 0.5 + Math.random() * 0.5;
-            weaponMesh.userData = {
-                baseY: floatHeight,
-                floatSpeed: floatSpeed,
-                floatTime: Math.random() * Math.PI * 2 // Random start phase
-            };
-            
+        const weaponMesh = new THREE.Mesh(weaponGeometry, weaponMaterial);
+        
+            weaponMesh.position.set(position.x, 0.5, position.z);
+        weaponMesh.rotation.y = Math.random() * Math.PI * 2;
+        weaponMesh.castShadow = true;
+        
+        // Add floating animation
+        const floatHeight = 0.5 + Math.random() * 0.2;
+        const floatSpeed = 0.5 + Math.random() * 0.5;
+        weaponMesh.userData = {
+            baseY: floatHeight,
+            floatSpeed: floatSpeed,
+            floatTime: Math.random() * Math.PI * 2 // Random start phase
+        };
+        
             // Add highlight effect (different color for different weapon types)
-            const highlightGeometry = new THREE.SphereGeometry(0.5, 8, 8);
-            const highlightMaterial = new THREE.MeshBasicMaterial({
+        const highlightGeometry = new THREE.SphereGeometry(0.5, 8, 8);
+        const highlightMaterial = new THREE.MeshBasicMaterial({
                 color: weaponColor,
-                transparent: true,
-                opacity: 0.3
-            });
-            const highlight = new THREE.Mesh(highlightGeometry, highlightMaterial);
-            highlight.scale.set(2, 1, 2);
-            highlight.position.y = 0.1;
-            weaponMesh.add(highlight);
-            
-            itemsGroup.add(weaponMesh);
-            
-            // Add to game state
-            gameState.items.push({
-                type: 'weapon',
-                weapon: weapon,
-                position: new THREE.Vector3(x, floatHeight, z),
-                mesh: weaponMesh
-            });
+            transparent: true,
+            opacity: 0.3
+        });
+        const highlight = new THREE.Mesh(highlightGeometry, highlightMaterial);
+        highlight.scale.set(2, 1, 2);
+        highlight.position.y = 0.1;
+        weaponMesh.add(highlight);
+        
+        itemsGroup.add(weaponMesh);
+        
+        // Add to game state
+        gameState.items.push({
+            type: 'weapon',
+            weapon: weapon,
+                position: new THREE.Vector3(position.x, floatHeight, position.z),
+            mesh: weaponMesh
+        });
         }
     }
     
@@ -1300,10 +1436,10 @@ function createKnifeEnemy(x, z, hasKnife = true) {
         speed: hasKnife ? 0.035 : 0.025,
         type: hasKnife ? 'knife' : 'gun',
         weapon: hasKnife ? 'knife' : 'pistol',
-        damage: hasKnife ? 20 : 15,
+        damage: hasKnife ? 5 : 10, // Reduced damage as requested
         attackRange: hasKnife ? 2.5 : 12,
         attackCooldown: 0,
-        maxAttackCooldown: hasKnife ? 1.0 : 2.5,
+        maxAttackCooldown: hasKnife ? 0.6 : 1.5, // Much faster attacks!
         lastAttackTime: 0,
         target: gameState.player.position,
         state: 'patrol',
@@ -1531,10 +1667,10 @@ function createTeamEnemy(x, z, team) {
         type: 'team',
         team: team,
         weapon: 'rifle',
-        damage: 15,
+        damage: 12, // Team enemies with moderate damage
         attackRange: 20,
         attackCooldown: 0,
-        maxAttackCooldown: 2.0,
+        maxAttackCooldown: 1.2, // Team enemies attack much faster!
         lastAttackTime: 0,
         target: gameState.player.position,
         state: 'moving',
@@ -1576,10 +1712,10 @@ function spawnForestBoss() {
         speed: 0.01, // Slower but powerful
         type: 'boss',
         weapon: 'rocket',
-        damage: 50,
+        damage: 20, // Boss with reasonable damage
         attackRange: 40,
         attackCooldown: 0,
-        maxAttackCooldown: 4.0,
+        maxAttackCooldown: 2.5, // Boss attacks more frequently!
         lastAttackTime: 0,
         target: gameState.player.position,
         state: 'moving',
@@ -1724,11 +1860,11 @@ function selectTeam(team) {
     
     // Position player on their team's side
     if (team === 'red') {
-        gameState.player.position.set(-90, 1, 0);
-        camera.position.set(-90, 1.6, 0);
+        gameState.player.position.set(-90, 2, 0); // Increased height
+        camera.position.set(-90, 2.2, 0); // Adjusted camera height
     } else {
-        gameState.player.position.set(90, 1, 0);
-        camera.position.set(90, 1.6, 0);
+        gameState.player.position.set(90, 2, 0); // Increased height
+        camera.position.set(90, 2.2, 0); // Adjusted camera height
     }
     
     // Hide team selection panel
@@ -2327,25 +2463,38 @@ function updatePlayerPosition(delta) {
 
 // Constrain player position within level boundaries
 function constrainPlayerPosition() {
+    // Adjust boundaries to account for taller player body (needs more clearance)
+    const playerRadius = 0.6; // Buffer for player body width/height
+    
     switch(gameState.currentStage) {
         case STAGES.WAREHOUSE:
-            gameState.player.position.x = Math.max(-49, Math.min(49, gameState.player.position.x));
-            gameState.player.position.z = Math.max(-49, Math.min(49, gameState.player.position.z));
+            gameState.player.position.x = Math.max(-49 + playerRadius, Math.min(49 - playerRadius, gameState.player.position.x));
+            gameState.player.position.z = Math.max(-49 + playerRadius, Math.min(49 - playerRadius, gameState.player.position.z));
             break;
         case STAGES.ARENA:
-            gameState.player.position.x = Math.max(-98, Math.min(98, gameState.player.position.x));
-            gameState.player.position.z = Math.max(-48, Math.min(48, gameState.player.position.z));
+            gameState.player.position.x = Math.max(-98 + playerRadius, Math.min(98 - playerRadius, gameState.player.position.x));
+            gameState.player.position.z = Math.max(-48 + playerRadius, Math.min(48 - playerRadius, gameState.player.position.z));
             break;
         case STAGES.FOREST:
-            gameState.player.position.x = Math.max(-99, Math.min(99, gameState.player.position.x));
-            gameState.player.position.z = Math.max(-99, Math.min(99, gameState.player.position.z));
+            gameState.player.position.x = Math.max(-99 + playerRadius, Math.min(99 - playerRadius, gameState.player.position.x));
+            gameState.player.position.z = Math.max(-99 + playerRadius, Math.min(99 - playerRadius, gameState.player.position.z));
             break;
     }
     
     // Update camera position to match player
     camera.position.x = gameState.player.position.x;
     camera.position.z = gameState.player.position.z;
-    camera.position.y = gameState.player.position.y + 0.6; // Eye level
+    camera.position.y = gameState.player.position.y + 0.2; // Eye level for taller player
+    
+    // Update player mesh position to follow the player
+    if (gameState.player.mesh) {
+        gameState.player.mesh.position.x = gameState.player.position.x;
+        gameState.player.mesh.position.z = gameState.player.position.z;
+        gameState.player.mesh.position.y = 0.9; // Keep feet on ground level
+        
+        // Rotate player mesh based on camera rotation (so player faces where they're looking)
+        gameState.player.mesh.rotation.y = camera.rotation.y;
+    }
 }
 
 // Enhanced realistic enemy update system
@@ -2401,10 +2550,10 @@ function updateEnemies(delta) {
                 // Knife enemy: rush toward player
                 if (distanceToPlayer > enemy.attackRange) {
                     // Move toward player aggressively
-                    const direction = new THREE.Vector3()
-                        .subVectors(gameState.player.position, enemy.position)
-                        .normalize();
-                    
+            const direction = new THREE.Vector3()
+                .subVectors(gameState.player.position, enemy.position)
+                .normalize();
+            
                     direction.y = 0; // Keep on ground
                     
                     // Check for wall collisions
@@ -2424,11 +2573,11 @@ function updateEnemies(delta) {
                     
                     if (canMove) {
                         enemy.position.copy(newPosition);
-                        enemy.mesh.position.copy(enemy.position);
+            enemy.mesh.position.copy(enemy.position);
                     }
-                    
+            
                     // Face player
-                    enemy.mesh.lookAt(gameState.player.position);
+            enemy.mesh.lookAt(gameState.player.position);
                     enemy.state = 'moving';
                 } else {
                     // Close enough to attack with knife
@@ -2454,8 +2603,8 @@ function updateEnemies(delta) {
                     }
                     
                     // Face player
-                    enemy.mesh.lookAt(gameState.player.position);
-                }
+            enemy.mesh.lookAt(gameState.player.position);
+        }
             } else if (enemy.type === 'gun') {
                 // Gun enemy: keep distance and shoot
                 if (distanceToPlayer <= enemy.attackRange && distanceToPlayer > 5) {
@@ -2761,14 +2910,14 @@ function showCheckpoint() {
             setupStage(gameState.currentStage);
             showTeamSelection();
         } else {
-            setupStage(gameState.currentStage);
-            
-            // Hide message and remove button
-            gameMessageElement.style.display = 'none';
-            gameMessageElement.innerHTML = '';
-            
-            // Lock pointer again
-            gameContainer.requestPointerLock();
+        setupStage(gameState.currentStage);
+        
+        // Hide message and remove button
+        gameMessageElement.style.display = 'none';
+        gameMessageElement.innerHTML = '';
+        
+        // Lock pointer again
+        gameContainer.requestPointerLock();
         }
     };
     
@@ -3022,7 +3171,7 @@ function updateUI() {
         if (gameState.player.isReloading) {
             weaponNameElement.textContent += ' (Reloading...)';
             weaponNameElement.style.color = 'yellow';
-        } else {
+    } else {
             weaponNameElement.style.color = 'white';
         }
     } else {
