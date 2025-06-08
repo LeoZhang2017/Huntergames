@@ -167,28 +167,109 @@ function setupScene() {
     window.addEventListener('resize', onWindowResize, false);
 }
 
-// Set up lighting in the scene
+// Enhanced lighting system for beautiful visuals
 function setupLighting() {
-    // Ambient light
-    const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+    // Enhanced ambient light with subtle color
+    const ambientLight = new THREE.AmbientLight(0x6688aa, 0.4);
     scene.add(ambientLight);
     
-    // Directional light (sun)
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-    directionalLight.position.set(5, 10, 7);
+    // Main directional light (sun) with warm tone
+    const directionalLight = new THREE.DirectionalLight(0xfff8dc, 1.2);
+    directionalLight.position.set(10, 15, 8);
     directionalLight.castShadow = true;
     
-    // Configure shadow properties
-    directionalLight.shadow.mapSize.width = 2048;
-    directionalLight.shadow.mapSize.height = 2048;
-    directionalLight.shadow.camera.near = 0.5;
-    directionalLight.shadow.camera.far = 50;
-    directionalLight.shadow.camera.left = -20;
-    directionalLight.shadow.camera.right = 20;
-    directionalLight.shadow.camera.top = 20;
-    directionalLight.shadow.camera.bottom = -20;
+    // Enhanced shadow properties for better quality
+    directionalLight.shadow.mapSize.width = 4096;
+    directionalLight.shadow.mapSize.height = 4096;
+    directionalLight.shadow.camera.near = 0.1;
+    directionalLight.shadow.camera.far = 100;
+    directionalLight.shadow.camera.left = -50;
+    directionalLight.shadow.camera.right = 50;
+    directionalLight.shadow.camera.top = 50;
+    directionalLight.shadow.camera.bottom = -50;
+    directionalLight.shadow.bias = -0.0005;
     
     scene.add(directionalLight);
+    
+    // Secondary fill light for softer shadows
+    const fillLight = new THREE.DirectionalLight(0x87ceeb, 0.3);
+    fillLight.position.set(-8, 8, -5);
+    scene.add(fillLight);
+    
+    // Add point lights for atmospheric effect
+    createAtmosphericLights();
+    
+    // Add volumetric lighting effect
+    createVolumetricLighting();
+}
+
+// Create atmospheric point lights
+function createAtmosphericLights() {
+    const colors = [0xff6b35, 0x4ecdc4, 0x45b7d1, 0xf9ca24, 0xf0932b];
+    
+    for (let i = 0; i < 8; i++) {
+        const pointLight = new THREE.PointLight(
+            colors[i % colors.length], 
+            0.6, 
+            25, 
+            2
+        );
+        
+        pointLight.position.set(
+            (Math.random() - 0.5) * 80,
+            5 + Math.random() * 10,
+            (Math.random() - 0.5) * 80
+        );
+        
+        pointLight.castShadow = true;
+        pointLight.shadow.mapSize.width = 1024;
+        pointLight.shadow.mapSize.height = 1024;
+        
+        scene.add(pointLight);
+        
+        // Add floating animation to lights
+        pointLight.userData = {
+            originalY: pointLight.position.y,
+            floatSpeed: 0.5 + Math.random() * 1.0,
+            floatPhase: Math.random() * Math.PI * 2
+        };
+    }
+}
+
+// Create subtle volumetric lighting effect
+function createVolumetricLighting() {
+    // Much more subtle god rays effect
+    const rayGeometry = new THREE.PlaneGeometry(50, 50);
+    const rayMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.03, // Much more subtle
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending
+    });
+    
+    // Reduce from 5 to 2 rays for less visual clutter
+    for (let i = 0; i < 2; i++) {
+        const ray = new THREE.Mesh(rayGeometry, rayMaterial);
+        ray.position.set(
+            Math.random() * 40 - 20,
+            25, // Higher up
+            Math.random() * 40 - 20
+        );
+        ray.rotation.set(
+            Math.random() * 0.2, // Less rotation
+            Math.random() * Math.PI,
+            Math.random() * 0.2
+        );
+        scene.add(ray);
+        
+        // Much slower animation
+        ray.userData = {
+            rotationSpeed: 0.0003 + Math.random() * 0.0005, // Much slower
+            pulseSpeed: 0.2 + Math.random() * 0.3, // Slower pulsing
+            baseopacity: 0.01 + Math.random() * 0.02 // Much more subtle
+        };
+    }
 }
 
 // Handle window resize
@@ -1210,22 +1291,39 @@ function createKnifeEnemy(x, z, hasKnife = true) {
     
     enemiesGroup.add(enemyMesh);
     
-    // Add enemy to game state
+    // Add enemy to game state with enhanced AI
     const enemy = {
         mesh: enemyMesh,
         position: new THREE.Vector3(x, 1, z),
-        health: hasKnife ? 50 : 75, // Knife enemies have less health
-        speed: hasKnife ? 0.03 : 0.02, // Knife enemies move faster
+        health: hasKnife ? 60 : 80,
+        maxHealth: hasKnife ? 60 : 80,
+        speed: hasKnife ? 0.035 : 0.025,
         type: hasKnife ? 'knife' : 'gun',
         weapon: hasKnife ? 'knife' : 'pistol',
-        damage: hasKnife ? 15 : 10,
-        attackRange: hasKnife ? 2 : 15, // Knife enemies need to get close
+        damage: hasKnife ? 20 : 15,
+        attackRange: hasKnife ? 2.5 : 12,
         attackCooldown: 0,
-        maxAttackCooldown: hasKnife ? 1.5 : 3.0, // Knife attacks faster when in range
+        maxAttackCooldown: hasKnife ? 1.0 : 2.5,
         lastAttackTime: 0,
         target: gameState.player.position,
-        state: 'moving', // 'moving', 'attacking', 'dead'
-        aggroRange: 25 // How far they can detect the player
+        state: 'patrol',
+        aggroRange: hasKnife ? 15 : 20,
+        
+        // Enhanced AI properties
+        alertLevel: 0,
+        lastKnownPlayerPos: null,
+        searchTime: 0,
+        patrolTarget: new THREE.Vector3(x + (Math.random() - 0.5) * 20, 0, z + (Math.random() - 0.5) * 20),
+        flankDirection: Math.random() > 0.5 ? 1 : -1,
+        timeSinceLastSight: 0,
+        accuracy: hasKnife ? 0.8 : 0.7,
+        reactionTime: 0.3 + Math.random() * 0.5,
+        
+        // Animation properties
+        walkCycle: Math.random() * Math.PI * 2,
+        breathCycle: Math.random() * Math.PI * 2,
+        headBob: 0,
+        armSwing: 0
     };
     
     gameState.enemies.push(enemy);
@@ -1669,6 +1767,253 @@ function updateItemAnimations(delta) {
             }
         }
     });
+}
+
+// AI State Machine Update
+function updateEnemyAI(enemy, distanceToPlayer, delta) {
+    // Increase alert level if player is close
+    if (distanceToPlayer < enemy.aggroRange) {
+        enemy.alertLevel = Math.min(100, enemy.alertLevel + 30 * delta);
+        enemy.lastKnownPlayerPos = gameState.player.position.clone();
+        enemy.timeSinceLastSight = 0;
+    } else {
+        enemy.timeSinceLastSight += delta;
+        if (enemy.timeSinceLastSight > 5) {
+            enemy.alertLevel = Math.max(0, enemy.alertLevel - 20 * delta);
+        }
+    }
+    
+    // State transitions based on alert level and distance
+    const oldState = enemy.state;
+    
+    if (enemy.health < enemy.maxHealth * 0.3 && enemy.type === 'gun') {
+        enemy.state = 'retreating';
+    } else if (distanceToPlayer < enemy.attackRange && enemy.alertLevel > 70) {
+        enemy.state = 'combat';
+    } else if (enemy.alertLevel > 50) {
+        if (enemy.type === 'gun' && distanceToPlayer > 8 && Math.random() < 0.3) {
+            enemy.state = 'flanking';
+        } else {
+            enemy.state = 'alerted';
+        }
+    } else if (enemy.lastKnownPlayerPos && enemy.timeSinceLastSight > 2 && enemy.timeSinceLastSight < 10) {
+        enemy.state = 'searching';
+    } else {
+        enemy.state = 'patrol';
+    }
+    
+    // Reset search time on state change
+    if (oldState !== enemy.state) {
+        enemy.searchTime = 0;
+    }
+}
+
+// Enhanced enemy animations
+function updateEnemyAnimations(enemy, delta) {
+    if (!enemy.mesh) return;
+    
+    const time = performance.now() * 0.001;
+    
+    // Walking animation
+    enemy.walkCycle += delta * 3;
+    if (enemy.state === 'patrol' || enemy.state === 'alerted' || enemy.state === 'searching') {
+        enemy.mesh.rotation.z = Math.sin(enemy.walkCycle) * 0.05;
+        enemy.mesh.position.y = 1 + Math.abs(Math.sin(enemy.walkCycle * 2)) * 0.02;
+    }
+    
+    // Breathing animation
+    enemy.breathCycle += delta * 2;
+    const breathScale = 1 + Math.sin(enemy.breathCycle) * 0.01;
+    enemy.mesh.scale.y = breathScale;
+    
+    // Combat stance
+    if (enemy.state === 'combat') {
+        enemy.mesh.rotation.x = -0.1; // Lean forward
+    } else {
+        enemy.mesh.rotation.x = 0;
+    }
+    
+    // Wounded animation
+    if (enemy.health < enemy.maxHealth * 0.5) {
+        enemy.mesh.rotation.z += Math.sin(time * 4) * 0.02; // Slight wobble
+    }
+}
+
+// Patrol state behavior
+function handlePatrolState(enemy, distanceToPlayer, delta) {
+    // Move towards patrol target
+    const direction = new THREE.Vector3()
+        .subVectors(enemy.patrolTarget, enemy.position)
+        .normalize();
+    
+    enemy.position.add(direction.multiplyScalar(enemy.speed * 0.5));
+    enemy.mesh.position.copy(enemy.position);
+    enemy.mesh.lookAt(enemy.patrolTarget);
+    
+    // Check if reached patrol target
+    if (enemy.position.distanceTo(enemy.patrolTarget) < 2) {
+        // Set new random patrol target
+        enemy.patrolTarget = new THREE.Vector3(
+            enemy.position.x + (Math.random() - 0.5) * 30,
+            0,
+            enemy.position.z + (Math.random() - 0.5) * 30
+        );
+    }
+}
+
+// Alerted state behavior
+function handleAlertedState(enemy, distanceToPlayer, delta) {
+    // Move towards player more cautiously
+    const direction = new THREE.Vector3()
+        .subVectors(gameState.player.position, enemy.position)
+        .normalize();
+    
+    enemy.position.add(direction.multiplyScalar(enemy.speed * 0.8));
+    enemy.mesh.position.copy(enemy.position);
+    enemy.mesh.lookAt(gameState.player.position);
+}
+
+// Combat state behavior
+function handleCombatState(enemy, distanceToPlayer, delta) {
+    if (enemy.type === 'knife') {
+        // Knife enemy: charge at player
+        const direction = new THREE.Vector3()
+            .subVectors(gameState.player.position, enemy.position)
+            .normalize();
+        
+        enemy.position.add(direction.multiplyScalar(enemy.speed * 1.5));
+        enemy.mesh.position.copy(enemy.position);
+        enemy.mesh.lookAt(gameState.player.position);
+        
+        // Attack if close enough
+        if (distanceToPlayer <= enemy.attackRange && enemy.attackCooldown <= 0) {
+            gameState.player.health -= enemy.damage;
+            enemy.attackCooldown = enemy.maxAttackCooldown;
+            createEnemyAttackEffect(enemy.position);
+            showPickupMessage(`Knife attack! -${enemy.damage} health!`, true);
+        }
+    } else {
+        // Gun enemy: maintain distance and shoot
+        const optimalDistance = 8;
+        const direction = new THREE.Vector3()
+            .subVectors(gameState.player.position, enemy.position)
+            .normalize();
+        
+        if (distanceToPlayer < optimalDistance) {
+            // Back away
+            enemy.position.sub(direction.multiplyScalar(enemy.speed * 0.5));
+        } else if (distanceToPlayer > optimalDistance + 3) {
+            // Move closer
+            enemy.position.add(direction.multiplyScalar(enemy.speed * 0.3));
+        }
+        
+        enemy.mesh.position.copy(enemy.position);
+        enemy.mesh.lookAt(gameState.player.position);
+        
+        // Shoot
+        if (enemy.attackCooldown <= 0 && Math.random() < enemy.accuracy) {
+            gameState.player.health -= enemy.damage;
+            enemy.attackCooldown = enemy.maxAttackCooldown;
+            createEnemyShootEffect(enemy.position, gameState.player.position);
+            showPickupMessage(`Shot by enemy! -${enemy.damage} health!`, true);
+        }
+    }
+}
+
+// Searching state behavior
+function handleSearchingState(enemy, distanceToPlayer, delta) {
+    enemy.searchTime += delta;
+    
+    if (enemy.lastKnownPlayerPos && enemy.searchTime < 8) {
+        // Move towards last known position
+        const direction = new THREE.Vector3()
+            .subVectors(enemy.lastKnownPlayerPos, enemy.position)
+            .normalize();
+        
+        enemy.position.add(direction.multiplyScalar(enemy.speed * 0.6));
+        enemy.mesh.position.copy(enemy.position);
+        enemy.mesh.lookAt(enemy.lastKnownPlayerPos);
+        
+        // Look around when reached
+        if (enemy.position.distanceTo(enemy.lastKnownPlayerPos) < 3) {
+            const lookTime = Math.sin(enemy.searchTime * 2) * Math.PI;
+            enemy.mesh.rotation.y += lookTime * delta;
+        }
+    } else {
+        // Give up searching
+        enemy.lastKnownPlayerPos = null;
+        enemy.state = 'patrol';
+    }
+}
+
+// Retreating state behavior
+function handleRetreatingState(enemy, distanceToPlayer, delta) {
+    // Move away from player
+    const direction = new THREE.Vector3()
+        .subVectors(enemy.position, gameState.player.position)
+        .normalize();
+    
+    enemy.position.add(direction.multiplyScalar(enemy.speed * 1.2));
+    enemy.mesh.position.copy(enemy.position);
+    
+    // Face away from player while retreating
+    enemy.mesh.lookAt(
+        enemy.position.x + direction.x,
+        enemy.position.y,
+        enemy.position.z + direction.z
+    );
+    
+    // Occasionally shoot while retreating
+    if (enemy.type === 'gun' && enemy.attackCooldown <= 0 && Math.random() < 0.3) {
+        gameState.player.health -= enemy.damage * 0.7; // Reduced accuracy while retreating
+        enemy.attackCooldown = enemy.maxAttackCooldown * 1.5;
+        createEnemyShootEffect(enemy.position, gameState.player.position);
+        showPickupMessage(`Retreating enemy shot! -${Math.round(enemy.damage * 0.7)} health!`, true);
+    }
+    
+    // Stop retreating if far enough or health recovered
+    if (distanceToPlayer > 25 || enemy.health > enemy.maxHealth * 0.6) {
+        enemy.state = 'patrol';
+    }
+}
+
+// Flanking state behavior
+function handleFlankingState(enemy, distanceToPlayer, delta) {
+    // Move in a circular pattern around player
+    const angle = Math.atan2(
+        enemy.position.z - gameState.player.position.z,
+        enemy.position.x - gameState.player.position.x
+    );
+    
+    const flankAngle = angle + (enemy.flankDirection * Math.PI * 0.5);
+    const targetDistance = 12;
+    
+    const targetPos = new THREE.Vector3(
+        gameState.player.position.x + Math.cos(flankAngle) * targetDistance,
+        0,
+        gameState.player.position.z + Math.sin(flankAngle) * targetDistance
+    );
+    
+    const direction = new THREE.Vector3()
+        .subVectors(targetPos, enemy.position)
+        .normalize();
+    
+    enemy.position.add(direction.multiplyScalar(enemy.speed * 0.7));
+    enemy.mesh.position.copy(enemy.position);
+    enemy.mesh.lookAt(gameState.player.position);
+    
+    // Shoot while flanking
+    if (enemy.attackCooldown <= 0 && Math.random() < 0.4) {
+        gameState.player.health -= enemy.damage * 0.8;
+        enemy.attackCooldown = enemy.maxAttackCooldown;
+        createEnemyShootEffect(enemy.position, gameState.player.position);
+        showPickupMessage(`Flanking shot! -${Math.round(enemy.damage * 0.8)} health!`, true);
+    }
+    
+    // Switch back to combat if close enough
+    if (distanceToPlayer < 8) {
+        enemy.state = 'combat';
+    }
 };
 
 // Update function
@@ -1874,6 +2219,8 @@ function animate() {
         updatePlayerPosition(delta);
         updateEnemies(delta);
         updateItemAnimations(delta);
+        updateAtmosphericEffects(delta);
+        updateParticleEffects(delta);
         checkCollisions();
         checkStageCompletion();
         updateUI();
@@ -2001,37 +2348,49 @@ function constrainPlayerPosition() {
     camera.position.y = gameState.player.position.y + 0.6; // Eye level
 }
 
-// Update enemies
+// Enhanced realistic enemy update system
 function updateEnemies(delta) {
     gameState.enemies.forEach((enemy, index) => {
         if (enemy.state === 'dead') return;
         
         const distanceToPlayer = enemy.position.distanceTo(gameState.player.position);
         
+        // Update AI state machine
+        updateEnemyAI(enemy, distanceToPlayer, delta);
+        
+        // Update enemy animations
+        updateEnemyAnimations(enemy, delta);
+        
         // Update attack cooldown
         if (enemy.attackCooldown > 0) {
             enemy.attackCooldown -= delta;
         }
         
-        // Handle retreating state
-        if (enemy.state === 'retreating') {
-            // Move away from player
-            const direction = new THREE.Vector3()
-                .subVectors(enemy.position, gameState.player.position)
-                .normalize();
-            
-            // Move faster when retreating
-            enemy.position.add(direction.multiplyScalar(enemy.speed * 2));
-            enemy.mesh.position.copy(enemy.position);
-            
-            // Face away from player while retreating
-            enemy.mesh.lookAt(
-                enemy.position.x + direction.x,
-                enemy.position.y,
-                enemy.position.z + direction.z
-            );
-            
-            return; // Skip other behaviors when retreating
+        // Update enemy health regeneration (slow)
+        if (enemy.health < enemy.maxHealth && enemy.state !== 'combat') {
+            enemy.health = Math.min(enemy.maxHealth, enemy.health + 2 * delta);
+        }
+        
+        // Handle different AI states
+        switch (enemy.state) {
+            case 'patrol':
+                handlePatrolState(enemy, distanceToPlayer, delta);
+                break;
+            case 'alerted':
+                handleAlertedState(enemy, distanceToPlayer, delta);
+                break;
+            case 'combat':
+                handleCombatState(enemy, distanceToPlayer, delta);
+                break;
+            case 'searching':
+                handleSearchingState(enemy, distanceToPlayer, delta);
+                break;
+            case 'retreating':
+                handleRetreatingState(enemy, distanceToPlayer, delta);
+                break;
+            case 'flanking':
+                handleFlankingState(enemy, distanceToPlayer, delta);
+                break;
         }
         
         // AI behavior based on distance and enemy type
@@ -2791,8 +3150,8 @@ function handleMouseDown(e) {
                     // Apply damage
                     enemy.health -= currentWeapon.weapon.damage;
                     
-                    // Create hit effect
-                    createHitEffect(intersects[0].point);
+                                         // Create enhanced hit effect
+                     createEnhancedImpactEffect(intersects[0].point, 'hit');
                     
                     if (enemy.health <= 0) {
                         // Enemy killed
@@ -3808,6 +4167,185 @@ function interactWithDoor(doorIndex) {
     }
 
     animateDoor();
+}
+
+// Update atmospheric effects for beauty
+function updateAtmosphericEffects(delta) {
+    const time = performance.now() * 0.001;
+    
+    // Animate floating lights
+    scene.children.forEach(child => {
+        if (child.type === 'PointLight' && child.userData.originalY) {
+            child.userData.floatPhase += child.userData.floatSpeed * delta;
+            child.position.y = child.userData.originalY + Math.sin(child.userData.floatPhase) * 2;
+            
+            // Subtle intensity pulsing
+            const baseIntensity = 0.6;
+            child.intensity = baseIntensity + Math.sin(child.userData.floatPhase * 2) * 0.2;
+        }
+        
+        // Animate god rays
+        if (child.userData.rotationSpeed) {
+            child.rotation.y += child.userData.rotationSpeed;
+            child.rotation.z += child.userData.rotationSpeed * 0.5;
+            
+            // Pulse opacity
+            const pulse = Math.sin(time * child.userData.pulseSpeed) * 0.5 + 0.5;
+            child.material.opacity = child.userData.baseopacity + pulse * 0.03;
+        }
+    });
+    
+    // Update fog for dynamic atmosphere
+    if (scene.fog) {
+        const baseDensity = 0.002;
+        const pulse = Math.sin(time * 0.5) * 0.0005;
+        scene.fog.density = baseDensity + pulse;
+    }
+}
+
+// Update particle effects
+function updateParticleEffects(delta) {
+    // Create ambient particles (dust motes)
+    if (Math.random() < 0.1) {
+        createAmbientParticle();
+    }
+    
+    // Update existing particles
+    effectsGroup.children.forEach((particle, index) => {
+        if (particle.userData.isParticle) {
+            particle.userData.life -= delta;
+            
+            // Move particle
+            particle.position.add(particle.userData.velocity.clone().multiplyScalar(delta));
+            
+            // Apply gravity to some particles
+            if (particle.userData.hasGravity) {
+                particle.userData.velocity.y -= 5 * delta;
+            }
+            
+            // Fade out
+            if (particle.material) {
+                const lifeRatio = particle.userData.life / particle.userData.maxLife;
+                particle.material.opacity = lifeRatio;
+                particle.scale.setScalar(lifeRatio);
+            }
+            
+            // Remove dead particles
+            if (particle.userData.life <= 0) {
+                effectsGroup.remove(particle);
+            }
+        }
+    });
+}
+
+// Create ambient dust particles
+function createAmbientParticle() {
+    const particleGeometry = new THREE.SphereGeometry(0.01, 4, 4);
+    const particleMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.3
+    });
+    
+    const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+    
+    // Random position around player
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 10 + Math.random() * 20;
+    particle.position.set(
+        gameState.player.position.x + Math.cos(angle) * distance,
+        2 + Math.random() * 8,
+        gameState.player.position.z + Math.sin(angle) * distance
+    );
+    
+    // Random drift velocity
+    particle.userData = {
+        isParticle: true,
+        life: 3 + Math.random() * 5,
+        maxLife: 3 + Math.random() * 5,
+        velocity: new THREE.Vector3(
+            (Math.random() - 0.5) * 0.5,
+            (Math.random() - 0.5) * 0.2,
+            (Math.random() - 0.5) * 0.5
+        ),
+        hasGravity: false
+    };
+    
+    effectsGroup.add(particle);
+}
+
+// Enhanced visual effects for impacts
+function createEnhancedImpactEffect(position, type = 'hit') {
+    // Create main impact flash
+    const colors = {
+        hit: [0xff4444, 0xff6666, 0xffaaaa],
+        explosion: [0xff8800, 0xffaa00, 0xffdd44],
+        spark: [0xffff88, 0xffffcc, 0xffffff]
+    };
+    
+    const effectColors = colors[type] || colors.hit;
+    
+    for (let i = 0; i < effectColors.length; i++) {
+        const flashGeometry = new THREE.SphereGeometry(0.2 + i * 0.1, 8, 8);
+        const flashMaterial = new THREE.MeshBasicMaterial({
+            color: effectColors[i],
+            transparent: true,
+            opacity: 1.0 - (i * 0.3)
+        });
+        
+        const flash = new THREE.Mesh(flashGeometry, flashMaterial);
+        flash.position.copy(position);
+        effectsGroup.add(flash);
+        
+        // Animate flash
+        let effectTime = 0;
+        const effectDuration = 0.3 + i * 0.1;
+        
+        const animateFlash = () => {
+            effectTime += 0.016;
+            if (effectTime < effectDuration) {
+                const progress = effectTime / effectDuration;
+                flash.material.opacity = (1.0 - (i * 0.3)) * (1 - progress);
+                flash.scale.setScalar(1 + progress * 3);
+                requestAnimationFrame(animateFlash);
+            } else {
+                effectsGroup.remove(flash);
+            }
+        };
+        
+        animateFlash();
+    }
+    
+    // Add particles for the effect
+    for (let i = 0; i < 15; i++) {
+        const particleGeometry = new THREE.SphereGeometry(0.02, 4, 4);
+        const particleMaterial = new THREE.MeshBasicMaterial({
+            color: effectColors[Math.floor(Math.random() * effectColors.length)],
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        const particle = new THREE.Mesh(particleGeometry, particleMaterial);
+        particle.position.copy(position);
+        
+        const speed = 1 + Math.random() * 3;
+        const angle = Math.random() * Math.PI * 2;
+        const elevation = Math.random() * Math.PI * 0.5;
+        
+        particle.userData = {
+            isParticle: true,
+            life: 0.5 + Math.random() * 1.0,
+            maxLife: 0.5 + Math.random() * 1.0,
+            velocity: new THREE.Vector3(
+                Math.cos(angle) * Math.cos(elevation) * speed,
+                Math.sin(elevation) * speed,
+                Math.sin(angle) * Math.cos(elevation) * speed
+            ),
+            hasGravity: true
+        };
+        
+        effectsGroup.add(particle);
+    }
 }
 
 // Initialize the game when the page loads
