@@ -61,7 +61,8 @@ const gameState = {
     doorStates: {}, // Track door states (open/closed)
     wallColliders: [], // Store wall collision boxes
     keys: {},
-    moveSpeed: 0.05
+    moveSpeed: 0.05,
+    traders: []
 };
 
 // THREE.js Variables
@@ -2200,6 +2201,38 @@ function update(delta) {
     
     // Update UI
     updateUI();
+    
+    // Check for trader interaction
+    if (gameState.traders) {
+        gameState.traders.forEach(trader => {
+            const dist = trader.position.distanceTo(gameState.player.position);
+            if (dist < 3) {
+                // Show trade button if not already shown
+                if (!document.getElementById('trade-btn')) {
+                    const btn = document.createElement('button');
+                    btn.id = 'trade-btn';
+                    btn.textContent = 'Trade';
+                    btn.style.position = 'absolute';
+                    btn.style.bottom = '120px';
+                    btn.style.left = '50%';
+                    btn.style.transform = 'translateX(-50%)';
+                    btn.style.padding = '12px 28px';
+                    btn.style.fontSize = '20px';
+                    btn.style.background = '#f39c12';
+                    btn.style.color = 'white';
+                    btn.style.border = 'none';
+                    btn.style.borderRadius = '8px';
+                    btn.style.cursor = 'pointer';
+                    btn.onclick = showTraderShop;
+                    document.body.appendChild(btn);
+                }
+            } else {
+                // Hide trade button if player walks away
+                const btn = document.getElementById('trade-btn');
+                if (btn) btn.remove();
+            }
+        });
+    }
 }
 
 // Extend checkCollisions to handle new item types
@@ -4702,4 +4735,88 @@ function createForestTerrain() {
             new THREE.Vector3(x + houseWidth / 2, houseHeight, z + houseDepth / 2)
         ));
     }
+    // Add NPC traders
+    const traderCount = 2 + Math.floor(Math.random() * 2); // 2-3 traders
+    for (let i = 0; i < traderCount; i++) {
+        let x, z;
+        do {
+            x = Math.random() * 160 - 80;
+            z = Math.random() * 160 - 80;
+        } while (Math.sqrt(x * x + z * z) < 25);
+        // Place near a house
+        const traderGeometry = new THREE.CylinderGeometry(0.5, 0.7, 1.7, 8);
+        const traderMaterial = new THREE.MeshStandardMaterial({ color: 0xFFD700 });
+        const trader = new THREE.Mesh(traderGeometry, traderMaterial);
+        trader.position.set(x, 0.85, z);
+        trader.castShadow = true;
+        trader.userData.isTrader = true;
+        terrainGroup.add(trader);
+        // Add to game state for interaction
+        if (!gameState.traders) gameState.traders = [];
+        gameState.traders.push({ mesh: trader, position: new THREE.Vector3(x, 0.85, z) });
+    }
+}
+
+function showTraderShop() {
+    // Simple shop UI
+    gameMessageElement.innerHTML = '';
+    gameMessageElement.style.display = 'block';
+    const shopTitle = document.createElement('h2');
+    shopTitle.textContent = 'Trader Shop';
+    shopTitle.style.marginBottom = '10px';
+    gameMessageElement.appendChild(shopTitle);
+    const items = [
+        { name: 'Health Pack', price: 20, effect: () => { gameState.player.health = Math.min(100, gameState.player.health + 40); } },
+        { name: 'Rifle Ammo', price: 15, effect: () => {
+            const weapon = gameState.player.inventory.find(i => i.type === 'weapon' && i.weapon.ammoType === 'rifle');
+            if (weapon) weapon.ammo += 30;
+        } },
+        { name: 'Random Weapon', price: 40, effect: () => {
+            const weaponKeys = Object.keys(WEAPONS);
+            const weaponType = weaponKeys[Math.floor(Math.random() * weaponKeys.length)];
+            const weapon = WEAPONS[weaponType];
+            gameState.player.inventory.push({ type: 'weapon', weapon, ammo: weapon.capacity });
+        } }
+    ];
+    items.forEach(item => {
+        const btn = document.createElement('button');
+        btn.textContent = `${item.name} (${item.price} coins)`;
+        btn.style.display = 'block';
+        btn.style.margin = '10px auto';
+        btn.style.padding = '10px 20px';
+        btn.style.fontSize = '18px';
+        btn.style.background = '#27ae60';
+        btn.style.color = 'white';
+        btn.style.border = 'none';
+        btn.style.borderRadius = '5px';
+        btn.style.cursor = 'pointer';
+        btn.onclick = () => {
+            if (gameState.player.coins >= item.price) {
+                gameState.player.coins -= item.price;
+                item.effect();
+                updateUI();
+                showPickupMessage(`Purchased ${item.name}!`);
+            } else {
+                showPickupMessage('Not enough coins!', true);
+            }
+        };
+        gameMessageElement.appendChild(btn);
+    });
+    // Close button
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = 'Close';
+    closeBtn.style.display = 'block';
+    closeBtn.style.margin = '20px auto 0 auto';
+    closeBtn.style.padding = '8px 18px';
+    closeBtn.style.fontSize = '16px';
+    closeBtn.style.background = '#c0392b';
+    closeBtn.style.color = 'white';
+    closeBtn.style.border = 'none';
+    closeBtn.style.borderRadius = '5px';
+    closeBtn.style.cursor = 'pointer';
+    closeBtn.onclick = () => {
+        gameMessageElement.style.display = 'none';
+        gameMessageElement.innerHTML = '';
+    };
+    gameMessageElement.appendChild(closeBtn);
 } 
