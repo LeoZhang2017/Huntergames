@@ -1636,17 +1636,10 @@ function createForestMinion(x, z, type = 'wolf') {
 
 // Spawn enemies for arena stage
 function spawnArenaEnemies() {
-    const enemySpawnPoints = [
-        { x: -80, z: -30 }, { x: 80, z: -30 }, 
-        { x: -80, z: 30 }, { x: 80, z: 30 },
-        { x: -60, z: 0 }, { x: 60, z: 0 }
-    ];
-
-    // Spawn 6 enemies (3 red team, 3 blue team)
-    for (let i = 0; i < 6; i++) {
-        const spawnPoint = enemySpawnPoints[i];
-        const team = i < 3 ? 'red' : 'blue';
-        createTeamEnemy(spawnPoint.x, spawnPoint.z, team);
+    // Red team on left, blue team on right
+    for (let i = 0; i < 3; i++) {
+        createTeamEnemy(-30, 10 + i * 10, 'red');
+        createTeamEnemy(30, 10 + i * 10, 'blue');
     }
 }
 
@@ -1654,7 +1647,7 @@ function spawnArenaEnemies() {
 function createTeamEnemy(x, z, team) {
     // Create enemy body
     const enemyGeometry = new THREE.CylinderGeometry(0.5, 0.5, 1.5, 8);
-    const enemyMaterial = new THREE.MeshStandardMaterial({ 
+    const enemyMaterial = new THREE.MeshBasicMaterial({ 
         color: team === 'red' ? 0x8B0000 : 0x000080
     });
     const enemyMesh = new THREE.Mesh(enemyGeometry, enemyMaterial);
@@ -1664,17 +1657,33 @@ function createTeamEnemy(x, z, team) {
     
     // Add simple face
     const faceGeometry = new THREE.SphereGeometry(0.3, 8, 8);
-    const faceMaterial = new THREE.MeshStandardMaterial({ color: 0xFFDBB5 });
+    const faceMaterial = new THREE.MeshBasicMaterial({ color: 0xFFDBB5 });
     const face = new THREE.Mesh(faceGeometry, faceMaterial);
     face.position.y = 0.6;
     enemyMesh.add(face);
     
     // Add rifle
     const rifleGeometry = new THREE.BoxGeometry(0.05, 0.05, 0.4);
-    const rifleMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const rifleMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
     const rifle = new THREE.Mesh(rifleGeometry, rifleMaterial);
     rifle.position.set(0.3, 0, 0.2);
     enemyMesh.add(rifle);
+
+    // Add a visible nametag above the enemy
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = team === 'red' ? '#ff3333' : '#3333ff';
+    ctx.font = 'bold 32px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(team.toUpperCase() + ' ENEMY', 128, 40);
+    const texture = new THREE.CanvasTexture(canvas);
+    const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true });
+    const nameTag = new THREE.Sprite(spriteMaterial);
+    nameTag.scale.set(4, 1, 1);
+    nameTag.position.set(0, 2.2, 0);
+    enemyMesh.add(nameTag);
     
     enemiesGroup.add(enemyMesh);
     
@@ -1683,7 +1692,7 @@ function createTeamEnemy(x, z, team) {
         mesh: enemyMesh,
         position: new THREE.Vector3(x, 1, z),
         health: 100,
-        speed: 0.02,
+        speed: 0.04, // Slightly faster for visibility
         type: 'team',
         team: team,
         weapon: 'rifle',
@@ -2563,194 +2572,55 @@ function constrainPlayerPosition() {
 function updateEnemies(delta) {
     gameState.enemies.forEach((enemy, index) => {
         if (enemy.state === 'dead') return;
-        
-        const distanceToPlayer = enemy.position.distanceTo(gameState.player.position);
-        
-        // Update AI state machine
-        updateEnemyAI(enemy, distanceToPlayer, delta);
-        
-        // Update enemy animations
-        updateEnemyAnimations(enemy, delta);
-        
-        // Update attack cooldown
-        if (enemy.attackCooldown > 0) {
-            enemy.attackCooldown -= delta;
-        }
-        
-        // Update enemy health regeneration (slow)
-        if (enemy.health < enemy.maxHealth && enemy.state !== 'combat') {
-            enemy.health = Math.min(enemy.maxHealth, enemy.health + 2 * delta);
-        }
-        
-        // Handle different AI states
-        switch (enemy.state) {
-            case 'patrol':
-                handlePatrolState(enemy, distanceToPlayer, delta);
-                break;
-            case 'alerted':
-                handleAlertedState(enemy, distanceToPlayer, delta);
-                break;
-            case 'combat':
-                handleCombatState(enemy, distanceToPlayer, delta);
-                break;
-            case 'searching':
-                handleSearchingState(enemy, distanceToPlayer, delta);
-                break;
-            case 'retreating':
-                handleRetreatingState(enemy, distanceToPlayer, delta);
-                break;
-            case 'flanking':
-                handleFlankingState(enemy, distanceToPlayer, delta);
-                break;
-        }
-        
-        // AI behavior based on distance and enemy type
-        if (distanceToPlayer <= enemy.aggroRange) {
-            // Player is within aggro range
-            
-            if (enemy.type === 'knife') {
-                // Knife enemy: rush toward player
-                if (distanceToPlayer > enemy.attackRange) {
-                    // Move toward player aggressively
-            const direction = new THREE.Vector3()
-                .subVectors(gameState.player.position, enemy.position)
-                .normalize();
-            
-                    direction.y = 0; // Keep on ground
-                    
-                    // Check for wall collisions
-                    const newPosition = enemy.position.clone().add(direction.multiplyScalar(enemy.speed));
-                    const enemyBox = new THREE.Box3().setFromCenterAndSize(
-                        newPosition,
-                        new THREE.Vector3(1, 2, 1)
-                    );
-                    
-                    let canMove = true;
-                    for (const wall of gameState.wallColliders) {
-                        if (enemyBox.intersectsBox(wall)) {
-                            canMove = false;
-                            break;
-                        }
+        let target = null;
+        if (enemy.type === 'team') {
+            // Find nearest enemy of the opposite team
+            let minDist = Infinity;
+            gameState.enemies.forEach(other => {
+                if (other !== enemy && other.type === 'team' && other.team !== enemy.team) {
+                    const dist = enemy.position.distanceTo(other.position);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        target = other;
                     }
-                    
-                    if (canMove) {
-                        enemy.position.copy(newPosition);
-            enemy.mesh.position.copy(enemy.position);
-                    }
-            
-                    // Face player
-            enemy.mesh.lookAt(gameState.player.position);
-                    enemy.state = 'moving';
-                } else {
-                    // Close enough to attack with knife
-                    if (enemy.attackCooldown <= 0) {
-                        // Attack!
-                        gameState.player.health -= enemy.damage;
-                        enemy.attackCooldown = enemy.maxAttackCooldown;
-                        
-                        // Create attack effect
-                        createEnemyAttackEffect(enemy.position);
-                        
-                        // Show damage message
-                        showPickupMessage(`Knife attack! -${enemy.damage} health!`, true);
-                        
-                        enemy.state = 'attacking';
-                        
-                        // Brief pause after attacking
-                        setTimeout(() => {
-                            if (enemy.state === 'attacking') {
-                                enemy.state = 'moving';
-                            }
-                        }, 500);
-                    }
-                    
-                    // Face player
-            enemy.mesh.lookAt(gameState.player.position);
-        }
-            } else if (enemy.type === 'gun') {
-                // Gun enemy: keep distance and shoot
-                if (distanceToPlayer <= enemy.attackRange && distanceToPlayer > 5) {
-                    // Good shooting distance - attack
-                    if (enemy.attackCooldown <= 0) {
-                        // Check line of sight (simple raycast)
-                        const direction = new THREE.Vector3()
-                            .subVectors(gameState.player.position, enemy.position)
-                            .normalize();
-                        
-                        const raycaster = new THREE.Raycaster(enemy.position, direction);
-                        const intersects = raycaster.intersectObjects(terrainGroup.children);
-                        
-                        // If no walls blocking, shoot
-                        if (intersects.length === 0 || intersects[0].distance > distanceToPlayer) {
-                            gameState.player.health -= enemy.damage;
-                            enemy.attackCooldown = enemy.maxAttackCooldown;
-                            
-                            // Create shooting effect
-                            createEnemyShootEffect(enemy.position, gameState.player.position);
-                            
-                            showPickupMessage(`Shot by enemy! -${enemy.damage} health!`, true);
-                            
-                            enemy.state = 'attacking';
-                            setTimeout(() => {
-                                if (enemy.state === 'attacking') {
-                                    enemy.state = 'moving';
-                                }
-                            }, 300);
-                        }
-                    }
-                    
-                    // Face player
-                    enemy.mesh.lookAt(gameState.player.position);
-                } else if (distanceToPlayer > enemy.attackRange) {
-                    // Too far, move closer (but not too close)
-                    const direction = new THREE.Vector3()
-                        .subVectors(gameState.player.position, enemy.position)
-                        .normalize();
-                    
-                    direction.y = 0;
-                    enemy.position.add(direction.multiplyScalar(enemy.speed));
-                    enemy.mesh.position.copy(enemy.position);
-                    enemy.mesh.lookAt(gameState.player.position);
-                    enemy.state = 'moving';
-                } else {
-                    // Too close, back away
-                    const direction = new THREE.Vector3()
-                        .subVectors(enemy.position, gameState.player.position)
-                        .normalize();
-                    
-                    direction.y = 0;
-                    enemy.position.add(direction.multiplyScalar(enemy.speed * 0.5));
-                    enemy.mesh.position.copy(enemy.position);
-                    enemy.mesh.lookAt(gameState.player.position);
-                    enemy.state = 'moving';
                 }
-            }
+            });
+            // If no opposite team, target player
+            if (!target) target = { position: gameState.player.position };
         } else {
-            // Player is out of range, patrol or idle
-            enemy.state = 'moving';
-            
-            // Simple patrol: move randomly
-            if (Math.random() < 0.01) { // 1% chance per frame to change direction
-                const randomDirection = new THREE.Vector3(
-                    (Math.random() - 0.5) * 2,
-                    0,
-                    (Math.random() - 0.5) * 2
-                ).normalize();
-                
-                enemy.position.add(randomDirection.multiplyScalar(enemy.speed * 0.3));
-                enemy.mesh.position.copy(enemy.position);
-                
-                // Keep enemies within warehouse bounds
-                enemy.position.x = Math.max(-48, Math.min(48, enemy.position.x));
-                enemy.position.z = Math.max(-48, Math.min(48, enemy.position.z));
-                enemy.mesh.position.copy(enemy.position);
+            target = { position: gameState.player.position };
+        }
+        // AI: Keep distance and shoot if in range
+        const direction = new THREE.Vector3().subVectors(target.position, enemy.position).normalize();
+        const distance = enemy.position.distanceTo(target.position);
+        if (distance > enemy.attackRange) {
+            // Move closer, but only up to attack range
+            enemy.position.add(direction.multiplyScalar(enemy.speed));
+        } else if (distance < enemy.attackRange * 0.7) {
+            // Too close, back away a bit
+            enemy.position.sub(direction.multiplyScalar(enemy.speed * 0.7));
+        } else {
+            // In range: shoot if cooldown allows
+            if (enemy.attackCooldown <= 0) {
+                // Simulate shooting
+                if (target.health !== undefined) target.health -= enemy.damage;
+                enemy.attackCooldown = enemy.maxAttackCooldown;
+                createEnemyShootEffect(enemy.position, target.position);
+                showPickupMessage(`${enemy.team.toUpperCase()} enemy shot!`, true);
             }
         }
-        
-        // Keep enemies within stage bounds
+        // Update cooldown
+        if (enemy.attackCooldown > 0) enemy.attackCooldown -= delta;
+        // Clamp enemy within arena bounds
         enemy.position.x = Math.max(-48, Math.min(48, enemy.position.x));
         enemy.position.z = Math.max(-48, Math.min(48, enemy.position.z));
         enemy.mesh.position.copy(enemy.position);
+        // Update nametag to always face the camera
+        enemy.mesh.children.forEach(child => {
+            if (child instanceof THREE.Sprite) {
+                child.lookAt(camera.position);
+            }
+        });
     });
 }
 
@@ -3568,38 +3438,29 @@ function updateWeaponVisual() {
 
 // Create AK-74 model (brown/wood finish)
 function createAK74Model(weaponGroup) {
-    // Main body
     const bodyGeometry = new THREE.BoxGeometry(0.08, 0.12, 1.0);
-    const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+    const bodyMaterial = new THREE.MeshBasicMaterial({ color: 0x8B4513 });
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
     weaponGroup.add(body);
-    
-    // Barrel
     const barrelGeometry = new THREE.CylinderGeometry(0.015, 0.015, 0.4, 12);
-    const barrelMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    const barrelMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
     const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
     barrel.position.set(0, 0.02, 0.7);
     barrel.rotation.x = Math.PI / 2;
     weaponGroup.add(barrel);
-    
-    // Stock
     const stockGeometry = new THREE.BoxGeometry(0.06, 0.08, 0.3);
-    const stockMaterial = new THREE.MeshStandardMaterial({ color: 0x654321 });
+    const stockMaterial = new THREE.MeshBasicMaterial({ color: 0x654321 });
     const stock = new THREE.Mesh(stockGeometry, stockMaterial);
     stock.position.set(0, -0.02, -0.65);
     weaponGroup.add(stock);
-    
-    // Magazine
     const magGeometry = new THREE.BoxGeometry(0.04, 0.15, 0.2);
-    const magMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const magMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
     const magazine = new THREE.Mesh(magGeometry, magMaterial);
     magazine.position.set(0, -0.15, 0.1);
     magazine.userData.isMagazine = true;
     weaponGroup.add(magazine);
-    
-    // Grip
     const gripGeometry = new THREE.BoxGeometry(0.04, 0.12, 0.08);
-    const gripMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+    const gripMaterial = new THREE.MeshBasicMaterial({ color: 0x8B4513 });
     const grip = new THREE.Mesh(gripGeometry, gripMaterial);
     grip.position.set(0, -0.12, -0.1);
     weaponGroup.add(grip);
@@ -3607,44 +3468,34 @@ function createAK74Model(weaponGroup) {
 
 // Create QBB95 model (dark gray, bullpup design)
 function createQBB95Model(weaponGroup) {
-    // Main body (longer, bullpup style)
     const bodyGeometry = new THREE.BoxGeometry(0.1, 0.1, 1.2);
-    const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x2F4F4F });
+    const bodyMaterial = new THREE.MeshBasicMaterial({ color: 0x2F4F4F });
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
     weaponGroup.add(body);
-    
-    // Barrel with bipod
     const barrelGeometry = new THREE.CylinderGeometry(0.018, 0.018, 0.5, 12);
-    const barrelMaterial = new THREE.MeshStandardMaterial({ color: 0x111111 });
+    const barrelMaterial = new THREE.MeshBasicMaterial({ color: 0x111111 });
     const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
     barrel.position.set(0, 0.02, 0.85);
     barrel.rotation.x = Math.PI / 2;
     weaponGroup.add(barrel);
-    
-    // Bipod legs
     const bipodGeometry = new THREE.CylinderGeometry(0.005, 0.005, 0.15, 6);
-    const bipodMaterial = new THREE.MeshStandardMaterial({ color: 0x444444 });
+    const bipodMaterial = new THREE.MeshBasicMaterial({ color: 0x444444 });
     const bipodLeft = new THREE.Mesh(bipodGeometry, bipodMaterial);
     bipodLeft.position.set(-0.08, -0.1, 0.6);
     bipodLeft.rotation.z = Math.PI / 6;
     weaponGroup.add(bipodLeft);
-    
     const bipodRight = new THREE.Mesh(bipodGeometry, bipodMaterial);
     bipodRight.position.set(0.08, -0.1, 0.6);
     bipodRight.rotation.z = -Math.PI / 6;
     weaponGroup.add(bipodRight);
-    
-    // Magazine (drum style)
     const magGeometry = new THREE.CylinderGeometry(0.06, 0.06, 0.08, 16);
-    const magMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+    const magMaterial = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
     const magazine = new THREE.Mesh(magGeometry, magMaterial);
     magazine.position.set(0, -0.12, 0.2);
     magazine.userData.isMagazine = true;
     weaponGroup.add(magazine);
-    
-    // Grip
     const gripGeometry = new THREE.BoxGeometry(0.04, 0.1, 0.06);
-    const gripMaterial = new THREE.MeshStandardMaterial({ color: 0x2F4F4F });
+    const gripMaterial = new THREE.MeshBasicMaterial({ color: 0x2F4F4F });
     const grip = new THREE.Mesh(gripGeometry, gripMaterial);
     grip.position.set(0, -0.1, 0.4);
     weaponGroup.add(grip);
@@ -3652,47 +3503,36 @@ function createQBB95Model(weaponGroup) {
 
 // Create AKM model (olive green, heavy)
 function createAKMModel(weaponGroup) {
-    // Main body (thicker than AK-74)
     const bodyGeometry = new THREE.BoxGeometry(0.09, 0.14, 1.1);
-    const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x556B2F });
+    const bodyMaterial = new THREE.MeshBasicMaterial({ color: 0x556B2F });
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
     weaponGroup.add(body);
-    
-    // Heavy barrel
     const barrelGeometry = new THREE.CylinderGeometry(0.02, 0.02, 0.45, 12);
-    const barrelMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+    const barrelMaterial = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
     const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
     barrel.position.set(0, 0.03, 0.75);
     barrel.rotation.x = Math.PI / 2;
     weaponGroup.add(barrel);
-    
-    // Muzzle brake
     const muzzleGeometry = new THREE.CylinderGeometry(0.025, 0.02, 0.08, 8);
-    const muzzleMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const muzzleMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
     const muzzle = new THREE.Mesh(muzzleGeometry, muzzleMaterial);
     muzzle.position.set(0, 0.03, 1.15);
     muzzle.rotation.x = Math.PI / 2;
     weaponGroup.add(muzzle);
-    
-    // Stock
     const stockGeometry = new THREE.BoxGeometry(0.07, 0.09, 0.35);
-    const stockMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+    const stockMaterial = new THREE.MeshBasicMaterial({ color: 0x8B4513 });
     const stock = new THREE.Mesh(stockGeometry, stockMaterial);
     stock.position.set(0, -0.01, -0.7);
     weaponGroup.add(stock);
-    
-    // Magazine (curved)
     const magGeometry = new THREE.BoxGeometry(0.045, 0.18, 0.25);
-    const magMaterial = new THREE.MeshStandardMaterial({ color: 0x2a2a2a });
+    const magMaterial = new THREE.MeshBasicMaterial({ color: 0x2a2a2a });
     const magazine = new THREE.Mesh(magGeometry, magMaterial);
     magazine.position.set(0, -0.16, 0.05);
-    magazine.rotation.x = -0.2; // Slight curve
+    magazine.rotation.x = -0.2;
     magazine.userData.isMagazine = true;
     weaponGroup.add(magazine);
-    
-    // Grip
     const gripGeometry = new THREE.BoxGeometry(0.045, 0.14, 0.09);
-    const gripMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+    const gripMaterial = new THREE.MeshBasicMaterial({ color: 0x8B4513 });
     const grip = new THREE.Mesh(gripGeometry, gripMaterial);
     grip.position.set(0, -0.13, -0.15);
     weaponGroup.add(grip);
@@ -3700,46 +3540,35 @@ function createAKMModel(weaponGroup) {
 
 // Create L86A2 model (purple/black, light machine gun)
 function createL86A2Model(weaponGroup) {
-    // Main body (long and sleek)
     const bodyGeometry = new THREE.BoxGeometry(0.08, 0.11, 1.3);
-    const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x800080 });
+    const bodyMaterial = new THREE.MeshBasicMaterial({ color: 0x800080 });
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
     weaponGroup.add(body);
-    
-    // Long barrel
     const barrelGeometry = new THREE.CylinderGeometry(0.016, 0.016, 0.6, 12);
-    const barrelMaterial = new THREE.MeshStandardMaterial({ color: 0x0a0a0a });
+    const barrelMaterial = new THREE.MeshBasicMaterial({ color: 0x0a0a0a });
     const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
     barrel.position.set(0, 0.02, 0.95);
     barrel.rotation.x = Math.PI / 2;
     weaponGroup.add(barrel);
-    
-    // Carrying handle
     const handleGeometry = new THREE.TorusGeometry(0.04, 0.008, 6, 12, Math.PI);
-    const handleMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const handleMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
     const handle = new THREE.Mesh(handleGeometry, handleMaterial);
     handle.position.set(0, 0.08, 0.2);
     handle.rotation.x = Math.PI / 2;
     weaponGroup.add(handle);
-    
-    // Stock
     const stockGeometry = new THREE.BoxGeometry(0.06, 0.08, 0.25);
-    const stockMaterial = new THREE.MeshStandardMaterial({ color: 0x4B0082 });
+    const stockMaterial = new THREE.MeshBasicMaterial({ color: 0x4B0082 });
     const stock = new THREE.Mesh(stockGeometry, stockMaterial);
     stock.position.set(0, -0.01, -0.6);
     weaponGroup.add(stock);
-    
-    // Magazine (long)
     const magGeometry = new THREE.BoxGeometry(0.04, 0.2, 0.15);
-    const magMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+    const magMaterial = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
     const magazine = new THREE.Mesh(magGeometry, magMaterial);
     magazine.position.set(0, -0.17, 0.1);
     magazine.userData.isMagazine = true;
     weaponGroup.add(magazine);
-    
-    // Grip
     const gripGeometry = new THREE.BoxGeometry(0.04, 0.12, 0.07);
-    const gripMaterial = new THREE.MeshStandardMaterial({ color: 0x800080 });
+    const gripMaterial = new THREE.MeshBasicMaterial({ color: 0x800080 });
     const grip = new THREE.Mesh(gripGeometry, gripMaterial);
     grip.position.set(0, -0.11, -0.1);
     weaponGroup.add(grip);
@@ -3747,42 +3576,29 @@ function createL86A2Model(weaponGroup) {
 
 // Create AUG A3 model (orange, modern bullpup)
 function createAUGA3Model(weaponGroup) {
-    // Main body (futuristic bullpup)
     const bodyGeometry = new THREE.BoxGeometry(0.09, 0.12, 1.1);
-    const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xFF4500 });
+    const bodyMaterial = new THREE.MeshBasicMaterial({ color: 0xFF4500 });
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
     weaponGroup.add(body);
-    
-    // Barrel with integrated scope
     const barrelGeometry = new THREE.CylinderGeometry(0.017, 0.017, 0.4, 12);
-    const barrelMaterial = new THREE.MeshStandardMaterial({ color: 0x111111 });
+    const barrelMaterial = new THREE.MeshBasicMaterial({ color: 0x111111 });
     const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
     barrel.position.set(0, 0.02, 0.75);
     barrel.rotation.x = Math.PI / 2;
     weaponGroup.add(barrel);
-    
-    // Integrated scope
     const scopeGeometry = new THREE.BoxGeometry(0.03, 0.04, 0.2);
-    const scopeMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    const scopeMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
     const scope = new THREE.Mesh(scopeGeometry, scopeMaterial);
     scope.position.set(0, 0.08, 0.3);
     weaponGroup.add(scope);
-    
-    // Magazine (transparent style)
     const magGeometry = new THREE.BoxGeometry(0.04, 0.16, 0.18);
-    const magMaterial = new THREE.MeshStandardMaterial({ 
-        color: 0x444444,
-        transparent: true,
-        opacity: 0.7
-    });
+    const magMaterial = new THREE.MeshBasicMaterial({ color: 0x444444, transparent: true, opacity: 0.7 });
     const magazine = new THREE.Mesh(magGeometry, magMaterial);
     magazine.position.set(0, -0.14, 0.15);
     magazine.userData.isMagazine = true;
     weaponGroup.add(magazine);
-    
-    // Grip (integrated)
     const gripGeometry = new THREE.BoxGeometry(0.04, 0.1, 0.06);
-    const gripMaterial = new THREE.MeshStandardMaterial({ color: 0xFF4500 });
+    const gripMaterial = new THREE.MeshBasicMaterial({ color: 0xFF4500 });
     const grip = new THREE.Mesh(gripGeometry, gripMaterial);
     grip.position.set(0, -0.1, 0.4);
     weaponGroup.add(grip);
@@ -3790,30 +3606,23 @@ function createAUGA3Model(weaponGroup) {
 
 // Create Rocket Launcher model
 function createRocketLauncherModel(weaponGroup) {
-    // Main tube
     const tubeGeometry = new THREE.CylinderGeometry(0.08, 0.08, 1.2, 12);
-    const tubeMaterial = new THREE.MeshStandardMaterial({ color: 0x444444 });
+    const tubeMaterial = new THREE.MeshBasicMaterial({ color: 0x444444 });
     const tube = new THREE.Mesh(tubeGeometry, tubeMaterial);
     tube.rotation.x = Math.PI / 2;
     weaponGroup.add(tube);
-    
-    // Grip
     const gripGeometry = new THREE.BoxGeometry(0.04, 0.12, 0.06);
-    const gripMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const gripMaterial = new THREE.MeshBasicMaterial({ color: 0x333333 });
     const grip = new THREE.Mesh(gripGeometry, gripMaterial);
     grip.position.set(0, -0.12, 0.2);
     weaponGroup.add(grip);
-    
-    // Trigger guard
     const triggerGeometry = new THREE.TorusGeometry(0.03, 0.005, 6, 12, Math.PI);
-    const triggerMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    const triggerMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
     const trigger = new THREE.Mesh(triggerGeometry, triggerMaterial);
     trigger.position.set(0, -0.08, 0.15);
     weaponGroup.add(trigger);
-    
-    // Sight
     const sightGeometry = new THREE.BoxGeometry(0.02, 0.03, 0.08);
-    const sightMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    const sightMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
     const sight = new THREE.Mesh(sightGeometry, sightMaterial);
     sight.position.set(0, 0.1, 0.3);
     weaponGroup.add(sight);
@@ -3822,12 +3631,11 @@ function createRocketLauncherModel(weaponGroup) {
 // Create default weapon model
 function createDefaultWeaponModel(weaponGroup) {
     const bodyGeometry = new THREE.BoxGeometry(0.08, 0.1, 1.0);
-    const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x666666 });
+    const bodyMaterial = new THREE.MeshBasicMaterial({ color: 0x666666 });
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
     weaponGroup.add(body);
-    
     const barrelGeometry = new THREE.CylinderGeometry(0.015, 0.015, 0.3, 8);
-    const barrelMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
+    const barrelMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
     const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
     barrel.position.set(0, 0, 0.65);
     barrel.rotation.x = Math.PI / 2;
