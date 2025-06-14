@@ -1637,7 +1637,7 @@ function createForestMinion(x, z, type = 'wolf') {
 // Spawn enemies for arena stage
 function spawnArenaEnemies() {
     // Red team on left, blue team on right
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
         createTeamEnemy(-30, 10 + i * 10, 'red');
         createTeamEnemy(30, 10 + i * 10, 'blue');
     }
