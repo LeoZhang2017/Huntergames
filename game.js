@@ -3174,6 +3174,13 @@ function handleKeyDown(e) {
         readyForStage2();
     }
     
+    // Handle go to stage 3 (U key)
+    if (key === 'u' && gameState.gameStarted) {
+        gameState.currentStage = STAGES.FOREST;
+        setupStage(STAGES.FOREST);
+        showPickupMessage('Teleported to Stage 3: The Billionaire Hunter!', false);
+    }
+    
     console.log('Key pressed:', key, 'Keys state:', gameState.keys); // Debug log
 }
 
