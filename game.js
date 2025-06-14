@@ -805,22 +805,22 @@ function createWarehouseTerrain() {
 
 // Create arena terrain
 function createArenaTerrain() {
-    // Create floor
+    // Use MeshBasicMaterial for the floor (no lighting required)
     const floorGeometry = new THREE.PlaneGeometry(200, 100);
-    const floorTexture = new THREE.TextureLoader().load('path/to/arena-floor.jpg');
-    floorTexture.wrapS = THREE.RepeatWrapping;
-    floorTexture.wrapT = THREE.RepeatWrapping;
-    floorTexture.repeat.set(10, 5);
-    
-    const floorMaterial = new THREE.MeshStandardMaterial({ 
-        color: 0xDDDDDD,
-        roughness: 0.8
+    const floorMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xDDDDDD
     });
-    
     const floor = new THREE.Mesh(floorGeometry, floorMaterial);
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     terrainGroup.add(floor);
+
+    // DEBUG: Add a large red cube at the center of the arena using MeshBasicMaterial
+    const debugGeometry = new THREE.BoxGeometry(10, 10, 10);
+    const debugMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const debugCube = new THREE.Mesh(debugGeometry, debugMaterial);
+    debugCube.position.set(0, 5, 0); // Centered at (0,5,0)
+    terrainGroup.add(debugCube);
     
     // Create arena walls
     const wallMaterial = new THREE.MeshStandardMaterial({ 
@@ -882,101 +882,37 @@ function createArenaTerrain() {
 
 // Create obstacles for the arena
 function createArenaObstacles() {
-    // Create concrete barriers
-    const barrierGeometry = new THREE.BoxGeometry(3, 1, 1);
-    const barrierMaterial = new THREE.MeshStandardMaterial({ 
-        color: 0xCCCCCC, 
-        roughness: 0.9 
-    });
-    
-    // Create center obstacles
-    for (let i = -30; i <= 30; i += 15) {
+    // Colorful barrier colors
+    const barrierColors = [0xff5733, 0x33ff57, 0x3357ff, 0xff33a8, 0xfff933, 0x33fff9, 0xa833ff];
+    // Place barriers at strategic positions
+    const barrierPositions = [
+        { x: -40, z: 0, rot: 0 },
+        { x: 40, z: 0, rot: 0 },
+        { x: 0, z: -20, rot: Math.PI / 2 },
+        { x: 0, z: 20, rot: Math.PI / 2 },
+        { x: -20, z: -20, rot: Math.PI / 4 },
+        { x: 20, z: 20, rot: Math.PI / 4 },
+        { x: -20, z: 20, rot: -Math.PI / 4 },
+        { x: 20, z: -20, rot: -Math.PI / 4 },
+        { x: 0, z: 0, rot: 0 },
+    ];
+    barrierPositions.forEach((pos, i) => {
+        const color = barrierColors[i % barrierColors.length];
+        const barrierGeometry = new THREE.BoxGeometry(8, 3, 1.5);
+        const barrierMaterial = new THREE.MeshBasicMaterial({ color });
         const barrier = new THREE.Mesh(barrierGeometry, barrierMaterial);
-        barrier.position.set(i, 0.5, 0);
-        barrier.rotation.y = Math.PI / 4;
+        barrier.position.set(pos.x, 1.5, pos.z);
+        barrier.rotation.y = pos.rot;
         barrier.castShadow = true;
         barrier.receiveShadow = true;
         terrainGroup.add(barrier);
-        
         // Add collision box for this barrier
         const barrierBox = new THREE.Box3().setFromCenterAndSize(
-            new THREE.Vector3(i, 0.5, 0),
-            new THREE.Vector3(3, 1, 1)
+            new THREE.Vector3(pos.x, 1.5, pos.z),
+            new THREE.Vector3(8, 3, 1.5)
         );
         gameState.wallColliders.push(barrierBox);
-    }
-    
-    // Create containers for cover
-    const containerGeometry = new THREE.BoxGeometry(5, 2.5, 2.5);
-    const containerMaterials = [
-        new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.8 }), // Brown
-        new THREE.MeshStandardMaterial({ color: 0x2E8B57, roughness: 0.8 }), // Green
-        new THREE.MeshStandardMaterial({ color: 0x4682B4, roughness: 0.8 })  // Blue
-    ];
-    
-    // Place containers in strategic positions
-    const containerPositions = [
-        { x: 0, z: 20, rotation: 0 },
-        { x: 0, z: -20, rotation: 0 },
-        { x: 30, z: 20, rotation: Math.PI / 4 },
-        { x: 30, z: -20, rotation: -Math.PI / 4 },
-        { x: -30, z: 20, rotation: -Math.PI / 4 },
-        { x: -30, z: -20, rotation: Math.PI / 4 },
-        { x: 60, z: 0, rotation: 0 },
-        { x: -60, z: 0, rotation: 0 }
-    ];
-    
-    containerPositions.forEach(pos => {
-        const material = containerMaterials[Math.floor(Math.random() * containerMaterials.length)];
-        const container = new THREE.Mesh(containerGeometry, material);
-        container.position.set(pos.x, 1.25, pos.z);
-        container.rotation.y = pos.rotation;
-        container.castShadow = true;
-        container.receiveShadow = true;
-        terrainGroup.add(container);
-        
-        // Add collision box for this container
-        const containerBox = new THREE.Box3().setFromCenterAndSize(
-            new THREE.Vector3(pos.x, 1.25, pos.z),
-            new THREE.Vector3(5, 2.5, 2.5)
-        );
-        gameState.wallColliders.push(containerBox);
     });
-    
-    // Create bunkers
-    const bunkerPositions = [
-        { x: 50, z: 25 },
-        { x: -50, z: 25 },
-        { x: 50, z: -25 },
-        { x: -50, z: -25 }
-    ];
-    
-    bunkerPositions.forEach(pos => {
-        createBunker(pos.x, pos.z);
-    });
-}
-
-// Create a bunker at given position
-function createBunker(x, z) {
-    const baseGeometry = new THREE.CylinderGeometry(4, 4, 1, 8);
-    const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x555555 });
-    const base = new THREE.Mesh(baseGeometry, baseMaterial);
-    base.position.set(x, 0.5, z);
-    terrainGroup.add(base);
-    
-    const wallGeometry = new THREE.CylinderGeometry(4, 4, 1.5, 8, 1, false, 0, Math.PI * 1.5);
-    const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x777777 });
-    const wall = new THREE.Mesh(wallGeometry, wallMaterial);
-    wall.position.set(x, 1.75, z);
-    wall.rotation.y = Math.random() * Math.PI * 2; // Random orientation
-    terrainGroup.add(wall);
-    
-    // Add collision box for bunker (circular collision approximated with square)
-    const bunkerBox = new THREE.Box3().setFromCenterAndSize(
-        new THREE.Vector3(x, 1.25, z),
-        new THREE.Vector3(7, 2.5, 7) // Slightly larger than bunker for easier collision
-    );
-    gameState.wallColliders.push(bunkerBox);
 }
 
 // Add decorative elements to the arena
@@ -1089,7 +1025,7 @@ function spawnWarehouseItems() {
             if (distance < MIN_DISTANCE) return false;
         }
         
-        // Make sure within warehouse bounds and not in center spawn area
+        // Make sure within warehouse bounds and not in center spawn
         if (Math.abs(x) > 48 || Math.abs(z) > 48) return false;
         if (Math.abs(x) < 8 && Math.abs(z) < 8) return false; // Avoid center spawn
         
@@ -1977,6 +1913,16 @@ function updateEnemyAnimations(enemy, delta) {
 
 // Patrol state behavior
 function handlePatrolState(enemy, distanceToPlayer, delta) {
+    // Safety check for patrolTarget
+    if (!enemy.patrolTarget) {
+        // Initialize patrol target if it doesn't exist
+        enemy.patrolTarget = new THREE.Vector3(
+            enemy.position.x + (Math.random() - 0.5) * 30,
+            0,
+            enemy.position.z + (Math.random() - 0.5) * 30
+        );
+    }
+
     // Move towards patrol target
     const direction = new THREE.Vector3()
         .subVectors(enemy.patrolTarget, enemy.position)
