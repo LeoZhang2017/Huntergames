@@ -61,7 +61,8 @@ const gameState = {
     doorStates: {}, // Track door states (open/closed)
     wallColliders: [], // Store wall collision boxes
     keys: {},
-    moveSpeed: 0.05
+    moveSpeed: 0.05,
+    traders: []
 };
 
 // THREE.js Variables
@@ -1543,11 +1544,94 @@ function setupArenaStage() {
 
 // Setup forest stage (Stage 3)
 function setupForestStage() {
-    // Boss battle will be implemented here
-    showPickupMessage("Forest stage is under development! Prepare for the final boss!", false);
-    
-    // Spawn boss enemy for testing
+    createForestTerrain();
+    showPickupMessage("Defeat the boss and its minions to win the Forest stage!", false);
     spawnForestBoss();
+    spawnForestMinions();
+}
+
+function spawnForestMinions() {
+    // Spawn 15-25 minions at random positions in the forest
+    const minionCount = 15 + Math.floor(Math.random() * 11);
+    for (let i = 0; i < minionCount; i++) {
+        // Random position within forest bounds, not too close to center
+        let x, z;
+        do {
+            x = Math.random() * 180 - 90;
+            z = Math.random() * 180 - 90;
+        } while (Math.sqrt(x * x + z * z) < 20); // Avoid boss area
+        // Randomly choose minion type
+        const type = Math.random() < 0.6 ? 'wolf' : 'hunter';
+        createForestMinion(x, z, type);
+    }
+}
+
+function createForestMinion(x, z, type = 'wolf') {
+    let minionGeometry, minionMaterial, health, speed, weapon, damage, attackRange, maxAttackCooldown, aggroRange;
+    if (type === 'wolf') {
+        // Wolf: fast, low health, melee
+        minionGeometry = new THREE.CylinderGeometry(0.4, 0.5, 1, 8);
+        minionMaterial = new THREE.MeshStandardMaterial({ color: 0x555555 });
+        health = 40;
+        speed = 0.05;
+        weapon = 'bite';
+        damage = 8;
+        attackRange = 1.5;
+        maxAttackCooldown = 1.2;
+        aggroRange = 18;
+    } else {
+        // Hunter: slower, more health, ranged
+        minionGeometry = new THREE.CylinderGeometry(0.5, 0.6, 1.3, 8);
+        minionMaterial = new THREE.MeshStandardMaterial({ color: 0x8B5A2B });
+        health = 70;
+        speed = 0.025;
+        weapon = 'bow';
+        damage = 12;
+        attackRange = 12;
+        maxAttackCooldown = 2.5;
+        aggroRange = 25;
+    }
+    const minionMesh = new THREE.Mesh(minionGeometry, minionMaterial);
+    minionMesh.position.set(x, 0.5, z);
+    minionMesh.castShadow = true;
+    enemiesGroup.add(minionMesh);
+    // Add glowing eyes
+    const eyeGeometry = new THREE.SphereGeometry(0.08, 8, 8);
+    const eyeMaterial = new THREE.MeshBasicMaterial({ color: type === 'wolf' ? 0xffcc00 : 0x00aaff });
+    const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    leftEye.position.set(-0.15, 0.7, 0.35);
+    minionMesh.add(leftEye);
+    const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+    rightEye.position.set(0.15, 0.7, 0.35);
+    minionMesh.add(rightEye);
+    // Add bow for hunter
+    if (type === 'hunter') {
+        const bowGeometry = new THREE.TorusGeometry(0.18, 0.03, 8, 16, Math.PI);
+        const bowMaterial = new THREE.MeshBasicMaterial({ color: 0x333300 });
+        const bow = new THREE.Mesh(bowGeometry, bowMaterial);
+        bow.position.set(0, 0.7, 0.5);
+        bow.rotation.x = Math.PI / 2;
+        minionMesh.add(bow);
+    }
+    // Add to game state
+    const minion = {
+        mesh: minionMesh,
+        position: new THREE.Vector3(x, 0.5, z),
+        health,
+        speed,
+        type: 'forest_minion',
+        minionType: type,
+        weapon,
+        damage,
+        attackRange,
+        attackCooldown: 0,
+        maxAttackCooldown,
+        lastAttackTime: 0,
+        target: gameState.player.position,
+        state: 'moving',
+        aggroRange
+    };
+    gameState.enemies.push(minion);
 }
 
 // Spawn enemies for arena stage
@@ -2117,6 +2201,38 @@ function update(delta) {
     
     // Update UI
     updateUI();
+    
+    // Check for trader interaction
+    if (gameState.traders) {
+        gameState.traders.forEach(trader => {
+            const dist = trader.position.distanceTo(gameState.player.position);
+            if (dist < 3) {
+                // Show trade button if not already shown
+                if (!document.getElementById('trade-btn')) {
+                    const btn = document.createElement('button');
+                    btn.id = 'trade-btn';
+                    btn.textContent = 'Trade';
+                    btn.style.position = 'absolute';
+                    btn.style.bottom = '120px';
+                    btn.style.left = '50%';
+                    btn.style.transform = 'translateX(-50%)';
+                    btn.style.padding = '12px 28px';
+                    btn.style.fontSize = '20px';
+                    btn.style.background = '#f39c12';
+                    btn.style.color = 'white';
+                    btn.style.border = 'none';
+                    btn.style.borderRadius = '8px';
+                    btn.style.cursor = 'pointer';
+                    btn.onclick = showTraderShop;
+                    document.body.appendChild(btn);
+                }
+            } else {
+                // Hide trade button if player walks away
+                const btn = document.getElementById('trade-btn');
+                if (btn) btn.remove();
+            }
+        });
+    }
 }
 
 // Extend checkCollisions to handle new item types
@@ -2664,6 +2780,28 @@ function checkStageCompletion() {
             if (!gameState.enemies.some(enemy => enemy.type === 'boss')) {
                 gameState.stageCompleted = true;
                 gameOver(true);
+                // Show 'Start Again' button
+                setTimeout(() => {
+                    const restartButton = document.createElement('button');
+                    restartButton.textContent = 'Start Again';
+                    restartButton.style.marginTop = '15px';
+                    restartButton.style.padding = '10px 20px';
+                    restartButton.style.pointerEvents = 'auto';
+                    restartButton.style.backgroundColor = '#27ae60';
+                    restartButton.style.color = 'white';
+                    restartButton.style.border = 'none';
+                    restartButton.style.borderRadius = '5px';
+                    restartButton.style.cursor = 'pointer';
+                    restartButton.onclick = () => {
+                        resetGameState();
+                        gameMessageElement.style.display = 'none';
+                        gameMessageElement.innerHTML = '';
+                        gameState.gameStarted = true;
+                        gameContainer.requestPointerLock();
+                    };
+                    gameMessageElement.appendChild(restartButton);
+                    gameMessageElement.style.display = 'block';
+                }, 1000);
             }
             break;
     }
@@ -4456,3 +4594,236 @@ window.addEventListener('load', () => {
     createTimerUI();
     animate();
 }); 
+
+function createForestTerrain() {
+    // Create a large green floor for the forest
+    const floorGeometry = new THREE.PlaneGeometry(200, 200);
+    const floorMaterial = new THREE.MeshStandardMaterial({
+        color: 0x228B22, // Forest green
+        roughness: 0.8
+    });
+    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    terrainGroup.add(floor);
+
+    // Add wall colliders around the edge of the forest
+    gameState.wallColliders = [];
+    const edge = 100;
+    const wallHeight = 10;
+    const wallThickness = 1;
+    // North
+    gameState.wallColliders.push(new THREE.Box3(
+        new THREE.Vector3(-edge, 0, -edge),
+        new THREE.Vector3(edge, wallHeight, -edge + wallThickness)
+    ));
+    // South
+    gameState.wallColliders.push(new THREE.Box3(
+        new THREE.Vector3(-edge, 0, edge - wallThickness),
+        new THREE.Vector3(edge, wallHeight, edge)
+    ));
+    // West
+    gameState.wallColliders.push(new THREE.Box3(
+        new THREE.Vector3(-edge, 0, -edge),
+        new THREE.Vector3(-edge + wallThickness, wallHeight, edge)
+    ));
+    // East
+    gameState.wallColliders.push(new THREE.Box3(
+        new THREE.Vector3(edge - wallThickness, 0, -edge),
+        new THREE.Vector3(edge, wallHeight, edge)
+    ));
+
+    // Add trees
+    const treeCount = 60;
+    for (let i = 0; i < treeCount; i++) {
+        let x, z;
+        do {
+            x = Math.random() * 180 - 90;
+            z = Math.random() * 180 - 90;
+        } while (Math.sqrt(x * x + z * z) < 15); // Keep center clear
+        // Trunk
+        const trunkGeometry = new THREE.CylinderGeometry(0.5, 0.7, 6, 8);
+        const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x8B5A2B });
+        const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+        trunk.position.set(x, 3, z);
+        trunk.castShadow = true;
+        terrainGroup.add(trunk);
+        // Leaves
+        const leavesGeometry = new THREE.SphereGeometry(2.2 + Math.random(), 12, 12);
+        const leavesMaterial = new THREE.MeshStandardMaterial({ color: 0x2E8B57 });
+        const leaves = new THREE.Mesh(leavesGeometry, leavesMaterial);
+        leaves.position.set(x, 7, z);
+        leaves.castShadow = true;
+        terrainGroup.add(leaves);
+        // Add wall collider for tree trunk
+        gameState.wallColliders.push(new THREE.Box3(
+            new THREE.Vector3(x - 0.6, 0, z - 0.6),
+            new THREE.Vector3(x + 0.6, 6, z + 0.6)
+        ));
+    }
+    // Add rocks
+    const rockCount = 20;
+    for (let i = 0; i < rockCount; i++) {
+        let x, z;
+        do {
+            x = Math.random() * 180 - 90;
+            z = Math.random() * 180 - 90;
+        } while (Math.sqrt(x * x + z * z) < 10);
+        const rockGeometry = new THREE.SphereGeometry(1.2 + Math.random() * 1.2, 10, 10);
+        const rockMaterial = new THREE.MeshStandardMaterial({ color: 0x888888 });
+        const rock = new THREE.Mesh(rockGeometry, rockMaterial);
+        rock.position.set(x, 1.2, z);
+        rock.castShadow = true;
+        terrainGroup.add(rock);
+        // Add wall collider for large rocks
+        gameState.wallColliders.push(new THREE.Box3(
+            new THREE.Vector3(x - 1.2, 0, z - 1.2),
+            new THREE.Vector3(x + 1.2, 2.5, z + 1.2)
+        ));
+    }
+    // Add bushes
+    const bushCount = 30;
+    for (let i = 0; i < bushCount; i++) {
+        let x, z;
+        do {
+            x = Math.random() * 180 - 90;
+            z = Math.random() * 180 - 90;
+        } while (Math.sqrt(x * x + z * z) < 8);
+        const bushGeometry = new THREE.SphereGeometry(0.7 + Math.random() * 0.5, 8, 8);
+        const bushMaterial = new THREE.MeshStandardMaterial({ color: 0x228B22 });
+        const bush = new THREE.Mesh(bushGeometry, bushMaterial);
+        bush.position.set(x, 0.7, z);
+        bush.castShadow = true;
+        terrainGroup.add(bush);
+        // (No collider for bushes, just visual cover)
+    }
+    // Add houses
+    const houseCount = 4 + Math.floor(Math.random() * 3); // 4-6 houses
+    for (let i = 0; i < houseCount; i++) {
+        let x, z;
+        do {
+            x = Math.random() * 160 - 80;
+            z = Math.random() * 160 - 80;
+        } while (Math.sqrt(x * x + z * z) < 25); // Avoid center
+        // House base
+        const houseWidth = 6 + Math.random() * 2;
+        const houseDepth = 6 + Math.random() * 2;
+        const houseHeight = 4 + Math.random();
+        const houseGeometry = new THREE.BoxGeometry(houseWidth, houseHeight, houseDepth);
+        const houseMaterial = new THREE.MeshStandardMaterial({ color: 0xdeb887 });
+        const house = new THREE.Mesh(houseGeometry, houseMaterial);
+        house.position.set(x, houseHeight / 2, z);
+        house.castShadow = true;
+        terrainGroup.add(house);
+        // Roof (pyramid)
+        const roofHeight = 2 + Math.random();
+        const roofGeometry = new THREE.ConeGeometry(Math.max(houseWidth, houseDepth) * 0.7, roofHeight, 4);
+        const roofMaterial = new THREE.MeshStandardMaterial({ color: 0x8b0000 });
+        const roof = new THREE.Mesh(roofGeometry, roofMaterial);
+        roof.position.set(x, houseHeight + roofHeight / 2, z);
+        roof.rotation.y = Math.PI / 4;
+        roof.castShadow = true;
+        terrainGroup.add(roof);
+        // Door
+        const doorGeometry = new THREE.BoxGeometry(1, 2, 0.2);
+        const doorMaterial = new THREE.MeshStandardMaterial({ color: 0x654321 });
+        const door = new THREE.Mesh(doorGeometry, doorMaterial);
+        door.position.set(x, 1, z + houseDepth / 2 + 0.11);
+        terrainGroup.add(door);
+        // Window
+        const windowGeometry = new THREE.BoxGeometry(1.2, 1, 0.15);
+        const windowMaterial = new THREE.MeshStandardMaterial({ color: 0x87ceeb, transparent: true, opacity: 0.6 });
+        const windowMesh = new THREE.Mesh(windowGeometry, windowMaterial);
+        windowMesh.position.set(x - houseWidth / 3, houseHeight * 0.7, z + houseDepth / 2 + 0.13);
+        terrainGroup.add(windowMesh);
+        // Add wall collider for house
+        gameState.wallColliders.push(new THREE.Box3(
+            new THREE.Vector3(x - houseWidth / 2, 0, z - houseDepth / 2),
+            new THREE.Vector3(x + houseWidth / 2, houseHeight, z + houseDepth / 2)
+        ));
+    }
+    // Add NPC traders
+    const traderCount = 2 + Math.floor(Math.random() * 2); // 2-3 traders
+    for (let i = 0; i < traderCount; i++) {
+        let x, z;
+        do {
+            x = Math.random() * 160 - 80;
+            z = Math.random() * 160 - 80;
+        } while (Math.sqrt(x * x + z * z) < 25);
+        // Place near a house
+        const traderGeometry = new THREE.CylinderGeometry(0.5, 0.7, 1.7, 8);
+        const traderMaterial = new THREE.MeshStandardMaterial({ color: 0xFFD700 });
+        const trader = new THREE.Mesh(traderGeometry, traderMaterial);
+        trader.position.set(x, 0.85, z);
+        trader.castShadow = true;
+        trader.userData.isTrader = true;
+        terrainGroup.add(trader);
+        // Add to game state for interaction
+        if (!gameState.traders) gameState.traders = [];
+        gameState.traders.push({ mesh: trader, position: new THREE.Vector3(x, 0.85, z) });
+    }
+}
+
+function showTraderShop() {
+    // Simple shop UI
+    gameMessageElement.innerHTML = '';
+    gameMessageElement.style.display = 'block';
+    const shopTitle = document.createElement('h2');
+    shopTitle.textContent = 'Trader Shop';
+    shopTitle.style.marginBottom = '10px';
+    gameMessageElement.appendChild(shopTitle);
+    const items = [
+        { name: 'Health Pack', price: 20, effect: () => { gameState.player.health = Math.min(100, gameState.player.health + 40); } },
+        { name: 'Rifle Ammo', price: 15, effect: () => {
+            const weapon = gameState.player.inventory.find(i => i.type === 'weapon' && i.weapon.ammoType === 'rifle');
+            if (weapon) weapon.ammo += 30;
+        } },
+        { name: 'Random Weapon', price: 40, effect: () => {
+            const weaponKeys = Object.keys(WEAPONS);
+            const weaponType = weaponKeys[Math.floor(Math.random() * weaponKeys.length)];
+            const weapon = WEAPONS[weaponType];
+            gameState.player.inventory.push({ type: 'weapon', weapon, ammo: weapon.capacity });
+        } }
+    ];
+    items.forEach(item => {
+        const btn = document.createElement('button');
+        btn.textContent = `${item.name} (${item.price} coins)`;
+        btn.style.display = 'block';
+        btn.style.margin = '10px auto';
+        btn.style.padding = '10px 20px';
+        btn.style.fontSize = '18px';
+        btn.style.background = '#27ae60';
+        btn.style.color = 'white';
+        btn.style.border = 'none';
+        btn.style.borderRadius = '5px';
+        btn.style.cursor = 'pointer';
+        btn.onclick = () => {
+            if (gameState.player.coins >= item.price) {
+                gameState.player.coins -= item.price;
+                item.effect();
+                updateUI();
+                showPickupMessage(`Purchased ${item.name}!`);
+            } else {
+                showPickupMessage('Not enough coins!', true);
+            }
+        };
+        gameMessageElement.appendChild(btn);
+    });
+    // Close button
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = 'Close';
+    closeBtn.style.display = 'block';
+    closeBtn.style.margin = '20px auto 0 auto';
+    closeBtn.style.padding = '8px 18px';
+    closeBtn.style.fontSize = '16px';
+    closeBtn.style.background = '#c0392b';
+    closeBtn.style.color = 'white';
+    closeBtn.style.border = 'none';
+    closeBtn.style.borderRadius = '5px';
+    closeBtn.style.cursor = 'pointer';
+    closeBtn.onclick = () => {
+        gameMessageElement.style.display = 'none';
+        gameMessageElement.innerHTML = '';
+    };
+    gameMessageElement.appendChild(closeBtn);
+} 
