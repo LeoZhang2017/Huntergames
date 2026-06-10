@@ -372,3 +372,124 @@ body {
     font-size: 10px;
     text-align: right;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Audio settings: gear button + modal panel                                  */
+/* -------------------------------------------------------------------------- */
+
+/* Gear is fixed to the viewport so it stays clickable over any overlay
+   (start screen, pause menu, etc.). Sits below the pause menu (z 2000) but
+   above HUD (z 100). */
+.audio-gear {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 2500;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background-color: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background-color 0.15s, transform 0.1s;
+}
+
+.audio-gear:hover {
+    background-color: rgba(0, 0, 0, 0.8);
+    transform: rotate(20deg);
+}
+
+.audio-gear:active {
+    transform: rotate(20deg) scale(0.95);
+}
+
+/* Above the pause menu (z 2000) so it's reachable from there too. */
+.audio-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 4000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    animation: pauseMenuFadeIn 120ms ease-out;
+}
+
+.audio-panel[hidden] {
+    display: none;
+}
+
+.audio-panel__card {
+    background-color: rgba(20, 20, 20, 0.95);
+    border: 1px solid rgba(231, 76, 60, 0.4);
+    border-radius: 10px;
+    padding: 24px 28px;
+    min-width: 300px;
+    color: #fff;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+}
+
+.audio-panel__title {
+    font-size: 1.4em;
+    margin-bottom: 16px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #e74c3c;
+}
+
+.audio-panel__row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    font-size: 1em;
+}
+
+.audio-panel__row--right {
+    justify-content: flex-end;
+    margin-top: 6px;
+    margin-bottom: 0;
+}
+
+.audio-panel__row input[type="range"] {
+    flex: 1;
+    accent-color: #e74c3c;
+}
+
+.audio-panel__vnum {
+    min-width: 28px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.85;
+}
+
+.audio-panel__btn {
+    padding: 8px 18px;
+    font-size: 0.95em;
+    font-family: inherit;
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.audio-panel__btn:hover {
+    background-color: rgba(255, 255, 255, 0.18);
+}
+
+.audio-panel__btn--primary {
+    background-color: #e74c3c;
+    border-color: #e74c3c;
+}
+
+.audio-panel__btn--primary:hover {
+    background-color: #c0392b;
+}
