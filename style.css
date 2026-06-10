@@ -214,4 +214,110 @@ body {
 
 .item {
     border: 2px solid #2ecc71;
-} 
+}
+
+/* -------------------------------------------------------------------------- */
+/* Pause Menu Overlay                                                         */
+/* -------------------------------------------------------------------------- */
+
+.pause-menu {
+    position: absolute;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    /* `hidden` attribute handles initial state; this animates appearance. */
+    animation: pauseMenuFadeIn 120ms ease-out;
+}
+
+.pause-menu[hidden] {
+    display: none;
+}
+
+@keyframes pauseMenuFadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.pause-menu__panel {
+    background-color: rgba(20, 20, 20, 0.92);
+    border: 1px solid rgba(231, 76, 60, 0.4);
+    border-radius: 10px;
+    padding: 32px 40px;
+    min-width: 320px;
+    text-align: center;
+    color: #fff;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+}
+
+.pause-menu__title {
+    font-size: 2em;
+    margin-bottom: 24px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #e74c3c;
+}
+
+.pause-menu__buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.pause-menu__btn {
+    padding: 12px 24px;
+    font-size: 1.1em;
+    font-family: inherit;
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s;
+}
+
+.pause-menu__btn:hover {
+    background-color: rgba(255, 255, 255, 0.18);
+}
+
+.pause-menu__btn:active {
+    transform: translateY(1px);
+}
+
+.pause-menu__btn--primary {
+    background-color: #e74c3c;
+    border-color: #e74c3c;
+}
+
+.pause-menu__btn--primary:hover {
+    background-color: #c0392b;
+}
+
+.pause-menu__btn--danger {
+    color: #e74c3c;
+    border-color: rgba(231, 76, 60, 0.4);
+}
+
+.pause-menu__btn--danger:hover {
+    background-color: rgba(231, 76, 60, 0.15);
+}
+
+.pause-menu__hint {
+    font-size: 0.85em;
+    opacity: 0.7;
+    margin-top: 4px;
+}
+
+.pause-menu__hint kbd {
+    background-color: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-family: monospace;
+    font-size: 0.95em;
+}
