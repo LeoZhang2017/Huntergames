@@ -65,5 +65,11 @@
     <!-- FPS / performance overlay (toggle with F3). Standalone — no
          ordering requirement; reads game.js's `renderer` global lazily. -->
     <script src="fps-overlay.js"></script>
+    <!-- Audio: synthesized SFX + settings (gear icon top-right). Loads
+         AFTER game.js so it can wrap its globals (reloadWeapon,
+         showPickupMessage, createEnhancedImpactEffect, gameOver). Should
+         load AFTER pause-menu.js so it wraps the pause-menu's resumeGame
+         too (to resume AudioContext on Resume). -->
+    <script src="audio.js"></script>
 </body>
 </html>
