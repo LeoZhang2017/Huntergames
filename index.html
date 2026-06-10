@@ -39,6 +39,19 @@
         <div id="current-stage">
             <!-- Current stage name will be displayed here -->
         </div>
+
+        <!-- Pause Menu Overlay (hidden by default; shown when ESC releases pointer lock mid-game) -->
+        <div id="pause-menu" class="pause-menu" hidden>
+            <div class="pause-menu__panel">
+                <h2 class="pause-menu__title">Paused</h2>
+                <div class="pause-menu__buttons">
+                    <button id="pause-resume" class="pause-menu__btn pause-menu__btn--primary" type="button">Resume</button>
+                    <button id="pause-restart" class="pause-menu__btn" type="button">Restart Stage</button>
+                    <button id="pause-quit" class="pause-menu__btn pause-menu__btn--danger" type="button">Quit to Main Menu</button>
+                </div>
+                <p class="pause-menu__hint">Press <kbd>ESC</kbd> or click Resume to return to the game.</p>
+            </div>
+        </div>
     </div>
 
     <!-- Three.js Library -->
@@ -46,5 +59,8 @@
     
     <!-- Game Scripts -->
     <script src="game.js"></script>
+    <!-- Pause menu controller — must load AFTER game.js to override its
+         pauseGame/resumeGame globals. -->
+    <script src="pause-menu.js"></script>
 </body>
-</html> 
+</html>
