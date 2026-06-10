@@ -1,10 +1,8 @@
 // -----------------------------------------------------------------------------
 // Audio system — synthesized SFX + settings panel
 // -----------------------------------------------------------------------------
-// Loaded as a classic <script> AFTER game.js. Patches game.js globals
-// (handleMouseDown, reloadWeapon, showPickupMessage, createEnhancedImpactEffect,
-// gameOver) so sound effects fire at the right moments without touching the
-// 170KB game.js file.
+// Loaded as a classic <script> AFTER game.js. Patches game.js globals so sound
+// effects fire at the right moments without touching the 170KB game.js file.
 //
 // All sounds are synthesized with the WebAudio API — no asset files. This
 // keeps the repo light and means the game still works offline / over file://.
@@ -14,10 +12,18 @@
 //   - Master volume (0..1)
 //   - Persisted in localStorage under `hg.audio.muted` and `hg.audio.volume`.
 //   - UI: a small gear button (top-right) opens a modal panel. Works from
-//     the start screen and from inside the pause overlay.
+//     the start screen, during gameplay, and from inside the pause overlay.
 //
 // AudioContext is created lazily on the first user gesture (browser autoplay
 // policy) and resumed when the user clicks Start Game or Resume.
+//
+// Hooking strategy:
+//   - For functions game.js CALLS by name (showPickupMessage, reloadWeapon,
+//     gameOver, createEnhancedImpactEffect): overriding window.fn works,
+//     because name resolution goes through the global object at call time.
+//   - For functions game.js REGISTERS as event listeners (handleMouseDown):
+//     overriding window.fn is too late — the listener captured the original
+//     by value. So we attach our own listener instead.
 // -----------------------------------------------------------------------------
 
 (function () {
@@ -78,21 +84,18 @@
 
     function applyMasterGain() {
         if (!masterGain) return;
-        // Cancel scheduled changes so the new value takes effect immediately.
         masterGain.gain.cancelScheduledValues(ctx.currentTime);
         masterGain.gain.setValueAtTime(settings.muted ? 0 : settings.volume, ctx.currentTime);
     }
 
     // ---- Sound primitives ---------------------------------------------------
-    // Each synth function returns nothing — fire-and-forget. They short-circuit
-    // when muted or volume == 0 so they cost nothing in that case.
+    // Fire-and-forget. Short-circuit when muted/silent so they cost nothing.
     function canPlay() {
         if (settings.muted || settings.volume <= 0) return false;
         if (!ensureCtx()) return false;
         return true;
     }
 
-    // Build a short noise buffer once and reuse it.
     let noiseBuffer = null;
     function getNoise() {
         if (!ctx) ensureCtx();
@@ -117,7 +120,6 @@
     function playGunshot() {
         if (!canPlay()) return;
         const t = ctx.currentTime;
-
         // Noise burst (the crack)
         const noise = ctx.createBufferSource();
         noise.buffer = getNoise();
@@ -128,7 +130,6 @@
         noise.connect(hp).connect(noiseGain).connect(masterGain);
         noise.start(t);
         noise.stop(t + 0.1);
-
         // Low thump (the body)
         const osc = ctx.createOscillator();
         osc.type = 'sine';
@@ -152,13 +153,6 @@
         osc.stop(t + 0.05);
     }
 
-    function playReload() {
-        if (!canPlay()) return;
-        // Two clicks ~150ms apart
-        playMechClick(0);
-        playMechClick(0.15);
-    }
-
     function playMechClick(delay) {
         if (!canPlay()) return;
         const t = ctx.currentTime + delay;
@@ -175,6 +169,12 @@
         noise.connect(bp).connect(g).connect(masterGain);
         noise.start(t);
         noise.stop(t + 0.06);
+    }
+
+    function playReload() {
+        // Two clicks ~150ms apart
+        playMechClick(0);
+        playMechClick(0.15);
     }
 
     function playPickup() {
@@ -206,7 +206,6 @@
     function playHit() {
         if (!canPlay()) return;
         const t = ctx.currentTime;
-        // Short noise thud, low-passed
         const noise = ctx.createBufferSource();
         noise.buffer = getNoise();
         const lp = ctx.createBiquadFilter();
@@ -216,29 +215,6 @@
         noise.connect(lp).connect(g).connect(masterGain);
         noise.start(t);
         noise.stop(t + 0.09);
-    }
-
-    function playWin() {
-        if (!canPlay()) return;
-        const t = ctx.currentTime;
-        // Two-note ascending triad
-        playNote(523.25, t,        0.15, 0.25); // C5
-        playNote(659.25, t + 0.13, 0.15, 0.25); // E5
-        playNote(783.99, t + 0.26, 0.3,  0.3);  // G5
-    }
-
-    function playLose() {
-        if (!canPlay()) return;
-        const t = ctx.currentTime;
-        // Descending tone
-        const osc = ctx.createOscillator();
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(220, t);
-        osc.frequency.exponentialRampToValueAtTime(80, t + 0.6);
-        const g = envGain(0.01, 0.65, 0.25);
-        osc.connect(g).connect(masterGain);
-        osc.start(t);
-        osc.stop(t + 0.7);
     }
 
     function playNote(freq, when, dur, peak) {
@@ -254,6 +230,27 @@
         osc.stop(when + dur + 0.02);
     }
 
+    function playWin() {
+        if (!canPlay()) return;
+        const t = ctx.currentTime;
+        playNote(523.25, t,        0.15, 0.25); // C5
+        playNote(659.25, t + 0.13, 0.15, 0.25); // E5
+        playNote(783.99, t + 0.26, 0.3,  0.3);  // G5
+    }
+
+    function playLose() {
+        if (!canPlay()) return;
+        const t = ctx.currentTime;
+        const osc = ctx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(220, t);
+        osc.frequency.exponentialRampToValueAtTime(80, t + 0.6);
+        const g = envGain(0.01, 0.65, 0.25);
+        osc.connect(g).connect(masterGain);
+        osc.start(t);
+        osc.stop(t + 0.7);
+    }
+
     // ---- Public API ---------------------------------------------------------
     const GameAudio = {
         play: function (name) {
@@ -266,7 +263,7 @@
                 case 'hit':      return playHit();
                 case 'win':      return playWin();
                 case 'lose':     return playLose();
-                default: /* unknown */ return;
+                default: return;
             }
         },
         setMuted: function (v) {
@@ -285,33 +282,28 @@
     };
     window.GameAudio = GameAudio;
 
-    // ---- Patch game.js hooks ------------------------------------------------
-    // We patch each global only if it exists, so the script stays robust to
-    // future renames or partial loads.
-    function patchHooks() {
-        // Gunshot / dry-fire on left mouse button. We wrap handleMouseDown
-        // and decide before delegating, because we need to know the
-        // pre-shot ammo state to distinguish a real shot from a dry fire.
-        if (typeof window.handleMouseDown === 'function') {
-            const orig = window.handleMouseDown;
-            window.handleMouseDown = function (e) {
-                try {
-                    if (e && e.button === 0 &&
-                        typeof gameState !== 'undefined' &&
-                        gameState.gameStarted && gameState.pointerLocked &&
-                        !gameState.player.isReloading) {
-                        const w = gameState.player.weapon;
-                        if (w) {
-                            if (w.ammo > 0) GameAudio.play('gunshot');
-                            else GameAudio.play('dryfire');
-                        }
-                    }
-                } catch (_) { /* never let SFX break the game */ }
-                return orig.apply(this, arguments);
-            };
-        }
+    // ---- Gunshot / dry-fire: own mousedown listener -------------------------
+    // We CAN'T wrap window.handleMouseDown because game.js already passed it
+    // to addEventListener — that copy is frozen. Add a parallel listener with
+    // the same gating logic. Capture phase so we run before any future stops.
+    window.addEventListener('mousedown', function (e) {
+        if (!e || e.button !== 0) return;
+        try {
+            if (typeof gameState === 'undefined') return;
+            if (!gameState.gameStarted || !gameState.pointerLocked) return;
+            if (!gameState.player) return;
+            if (gameState.player.isReloading) return;
+            const w = gameState.player.weapon;
+            if (!w) return;
+            if (w.ammo > 0) GameAudio.play('gunshot');
+            else GameAudio.play('dryfire');
+        } catch (_) { /* never break the game over a SFX */ }
+    }, true);
 
-        // Reload click
+    // ---- Patch hooks for functions game.js calls by name --------------------
+    function patchHooks() {
+        // Reload click — only play if the reload actually started (the
+        // function bails when isReloading or when there's no ammo to load).
         if (typeof window.reloadWeapon === 'function') {
             const orig = window.reloadWeapon;
             window.reloadWeapon = function () {
@@ -319,8 +311,6 @@
                                gameState.player.isReloading;
                 const result = orig.apply(this, arguments);
                 try {
-                    // Only play if the reload actually started (was not already reloading
-                    // and the function didn't bail with "No ammo to reload").
                     if (typeof gameState !== 'undefined' && gameState.player &&
                         !before && gameState.player.isReloading) {
                         GameAudio.play('reload');
@@ -330,8 +320,7 @@
             };
         }
 
-        // Pickup / warning — driven by the message popup that game.js already
-        // uses for every collectible and trap event.
+        // Pickup / warning — every collectible/trap event funnels through here.
         if (typeof window.showPickupMessage === 'function') {
             const orig = window.showPickupMessage;
             window.showPickupMessage = function (message, isWarning) {
@@ -372,7 +361,6 @@
                 return orig.apply(this, arguments);
             };
         }
-
         // Also resume on Resume from pause.
         if (typeof window.resumeGame === 'function') {
             const orig = window.resumeGame;
@@ -383,9 +371,8 @@
         }
     }
 
-    // game.js defines these at the top level. After its load event, they live
-    // on window. We wait for `load` so we patch the final versions (including
-    // any wrappers pause-menu.js installed).
+    // Wait for `load` so we wrap the final versions (including any wrappers
+    // pause-menu.js or other later scripts installed).
     if (document.readyState === 'complete') {
         patchHooks();
     } else {
@@ -394,7 +381,6 @@
 
     // ---- Settings UI --------------------------------------------------------
     function buildUI() {
-        // Gear button (top-right). Sits above HUD; not over the canvas center.
         const gear = document.createElement('button');
         gear.id = 'audio-gear';
         gear.type = 'button';
@@ -403,7 +389,6 @@
         gear.setAttribute('aria-label', 'Open audio settings');
         gear.textContent = '⚙';
 
-        // Panel
         const panel = document.createElement('div');
         panel.id = 'audio-panel';
         panel.className = 'audio-panel';
@@ -459,7 +444,7 @@
             e.stopPropagation();
             closePanel();
         });
-        // Close when clicking the dimmed area outside the card.
+        // Click outside the card closes the panel.
         panel.addEventListener('click', function (e) {
             if (e.target === panel) closePanel();
         });
