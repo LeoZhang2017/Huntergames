@@ -2,16 +2,18 @@
 // Pause Menu controller
 // -----------------------------------------------------------------------------
 // Wires the #pause-menu overlay (defined in index.html) and overrides the
-// legacy pauseGame/resumeGame functions that game.js declares globally.
+// legacy `pauseGame` / `resumeGame` functions that game.js declares.
 //
-// Loaded AFTER game.js. game.js's function declarations are hoisted onto the
-// global (window) scope; assigning `window.pauseGame = ...` here replaces them
-// at runtime. game.js's internal call sites (e.g. inside onPointerLockChange)
-// look up `pauseGame` through the scope chain and resolve to the new global.
+// Loaded as a classic <script> AFTER game.js. In classic scripts, top-level
+// `const`/`let` declarations (e.g. `const gameState = {...}`) live in the
+// shared script scope and are reachable by bare name from sibling scripts —
+// but they are NOT attached to `window`. Top-level `function` declarations
+// DO get hoisted onto `window`, which is why we can assign to
+// `window.pauseGame` / `window.resumeGame` to override them.
 //
 // The main animate() loop is already gated by `gameStarted && pointerLocked`,
-// so AI, physics, and timers freeze the moment pointer lock is released —
-// no additional pause flag is needed.
+// so AI, physics, and timers freeze the moment pointer lock is released — no
+// additional pause flag is needed here.
 // -----------------------------------------------------------------------------
 
 (function () {
@@ -22,12 +24,16 @@
     const pauseRestartBtn = document.getElementById('pause-restart');
     const pauseQuitBtn = document.getElementById('pause-quit');
 
-    // If markup is missing (e.g. an older index.html), leave the existing
-    // pauseGame/resumeGame in place so the click-to-continue fallback still works.
+    // If markup is missing (e.g. older index.html), leave the existing
+    // click-to-continue pauseGame in place.
     if (!pauseMenuEl) {
         console.warn('[pause-menu] #pause-menu not found; using legacy pause behaviour.');
         return;
     }
+
+    const containerEl = document.getElementById('game-container');
+    const messageEl = document.getElementById('game-message');
+    const startBtn = document.getElementById('start-button');
 
     function showPauseMenu() {
         pauseMenuEl.removeAttribute('hidden');
@@ -38,99 +44,95 @@
     }
 
     function hideLegacyMessage() {
-        const msg = document.getElementById('game-message');
-        if (msg) msg.style.display = 'none';
+        if (messageEl) messageEl.style.display = 'none';
     }
 
-    // --- Override pauseGame ---------------------------------------------------
-    // Only show overlay during real gameplay. Never on the start screen,
-    // between-stage checkpoints, or game-over screens.
+    // The caller in game.js (`onPointerLockChange`) already gates this with
+    //   gameStarted && !stageCompleted && !gameOver
+    // so we just need to show the overlay.
     window.pauseGame = function pauseGame() {
-        const gs = window.gameState;
-        if (!gs || !gs.gameStarted || gs.gameOver || gs.stageCompleted) return;
         showPauseMenu();
     };
 
-    // --- Override resumeGame -------------------------------------------------
     window.resumeGame = function resumeGame() {
-        const gs = window.gameState;
-        if (!gs || !gs.gameStarted || gs.gameOver) return;
+        // gameState is a top-level `const` in game.js — reachable by bare name
+        // from this sibling classic script.
+        if (typeof gameState === 'undefined' || !gameState.gameStarted || gameState.gameOver) {
+            hidePauseMenu();
+            return;
+        }
         hidePauseMenu();
         hideLegacyMessage();
-        const container = document.getElementById('game-container');
-        if (container && container.requestPointerLock) {
-            container.requestPointerLock();
+        if (containerEl && containerEl.requestPointerLock) {
+            containerEl.requestPointerLock();
         }
     };
 
-    // --- Restart only the current stage --------------------------------------
-    // Resets stage-scoped player state (health, position, ammo) and respawns
-    // the current stage. Accumulated coins from prior stages are preserved.
+    // Restart only the current stage. Preserves accumulated coins from prior
+    // stages; resets stage-scoped state (health, position, ammo, enemies,
+    // items, timers) and respawns the stage.
     function restartCurrentStage() {
-        const gs = window.gameState;
-        if (!gs) return;
         hidePauseMenu();
+        if (typeof gameState === 'undefined') return;
 
-        const stage = gs.currentStage;
+        const stage = gameState.currentStage;
 
-        gs.player.health = 100;
-        if (gs.player.position && gs.player.position.set) {
-            gs.player.position.set(0, 2, 0);
+        gameState.player.health = 100;
+        if (gameState.player.position && gameState.player.position.set) {
+            gameState.player.position.set(0, 2, 0);
         }
-        if (gs.player.rotation && gs.player.rotation.set) {
-            gs.player.rotation.set(0, 0, 0);
+        if (gameState.player.rotation && gameState.player.rotation.set) {
+            gameState.player.rotation.set(0, 0, 0);
         }
-        gs.player.isReloading = false;
-        gs.player.reloadTime = 0;
-        gs.enemies = [];
-        gs.items = [];
-        gs.stageCompleted = false;
-        gs.gameOver = false;
-        gs.enemySpawnTimer = 60;
-        gs.enemySpawned = false;
-        gs.warningShown = false;
-        gs.spawnWarningShown = false;
+        gameState.player.isReloading = false;
+        gameState.player.reloadTime = 0;
+        gameState.enemies = [];
+        gameState.items = [];
+        gameState.stageCompleted = false;
+        gameState.gameOver = false;
+        gameState.enemySpawnTimer = 60;
+        gameState.enemySpawned = false;
+        gameState.warningShown = false;
+        gameState.spawnWarningShown = false;
 
-        if (window.camera) {
-            window.camera.position.set(0, 2.2, 0);
-            window.camera.rotation.set(0, 0, 0);
-        }
-
-        if (typeof window.setupStage === 'function') {
-            window.setupStage(stage);
+        // `camera` is a top-level `let` in game.js.
+        if (typeof camera !== 'undefined' && camera) {
+            camera.position.set(0, 2.2, 0);
+            camera.rotation.set(0, 0, 0);
         }
 
-        const container = document.getElementById('game-container');
-        if (container && container.requestPointerLock) {
-            container.requestPointerLock();
+        // `setupStage` is a top-level function — on `window`.
+        if (typeof setupStage === 'function') {
+            setupStage(stage);
+        }
+
+        if (containerEl && containerEl.requestPointerLock) {
+            containerEl.requestPointerLock();
         }
     }
 
-    // --- Quit to the start screen -------------------------------------------
     function quitToMainMenu() {
-        const gs = window.gameState;
         hidePauseMenu();
         hideLegacyMessage();
 
-        if (gs) {
-            gs.gameStarted = false;
-            gs.timerActive = false;
+        if (typeof gameState !== 'undefined') {
+            gameState.gameStarted = false;
+            gameState.timerActive = false;
         }
 
-        const container = document.getElementById('game-container');
-        if (document.pointerLockElement === container) {
+        if (document.pointerLockElement === containerEl) {
             document.exitPointerLock();
         }
 
-        const startBtn = document.getElementById('start-button');
+        // Restore the original Start button so a new game can begin.
         if (startBtn) startBtn.style.display = '';
 
-        if (typeof window.resetGameState === 'function') {
-            window.resetGameState();
+        // `resetGameState` is a top-level function declared in game.js.
+        if (typeof resetGameState === 'function') {
+            resetGameState();
         }
     }
 
-    // --- Button wiring -------------------------------------------------------
     if (pauseResumeBtn) {
         pauseResumeBtn.addEventListener('click', function (e) {
             e.stopPropagation();
