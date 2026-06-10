@@ -62,5 +62,8 @@
     <!-- Pause menu controller — must load AFTER game.js to override its
          pauseGame/resumeGame globals. -->
     <script src="pause-menu.js"></script>
+    <!-- FPS / performance overlay (toggle with F3). Standalone — no
+         ordering requirement; reads game.js's `renderer` global lazily. -->
+    <script src="fps-overlay.js"></script>
 </body>
 </html>
